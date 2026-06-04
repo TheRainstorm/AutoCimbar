@@ -18,6 +18,7 @@ func main() {
 	blockSize := flag.Int("block-size", 0, "fountain block size in bytes, 0 uses max frame payload")
 	eccPercent := flag.Int("ecc", 3, "per-frame Reed-Solomon ECC percentage; decoder must use the same value")
 	colorBits := flag.Int("color-bits", 2, "color bits per cell: 1/2/3/4 uses 2/4/8/16 colors; decoder must use the same value")
+	packetsPerFrame := flag.Int("packets", 1, "independent packets per screen frame; decoder must use the same value")
 	noZstd := flag.Bool("no-zstd", false, "disable default zstd source compression")
 	screen := flag.Bool("screen", false, "show frames in a borderless screen window instead of writing PNG files")
 	region := flag.String("R", "0:0", "screen window region X:Y or SCREEN:X:Y, negative values anchor from right/bottom")
@@ -47,19 +48,20 @@ func main() {
 			fmt.Printf("screen encoder serving http://%s/\n", *addr)
 		}
 		result, err := app.EncodeFileToScreen(app.ScreenEncodeConfig{
-			InputPath:  *input,
-			GridSize:   *q,
-			Scale:      *b,
-			SymbolDir:  *symbolDir,
-			BlockSize:  *blockSize,
-			ECCPercent: *eccPercent,
-			ColorBits:  *colorBits,
-			NoZstd:     *noZstd,
-			Region:     *region,
-			FPS:        *fps,
-			Addr:       *addr,
-			Open:       *open,
-			Progress:   os.Stderr,
+			InputPath:       *input,
+			GridSize:        *q,
+			Scale:           *b,
+			SymbolDir:       *symbolDir,
+			BlockSize:       *blockSize,
+			ECCPercent:      *eccPercent,
+			ColorBits:       *colorBits,
+			PacketsPerFrame: *packetsPerFrame,
+			NoZstd:          *noZstd,
+			Region:          *region,
+			FPS:             *fps,
+			Addr:            *addr,
+			Open:            *open,
+			Progress:        os.Stderr,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "screen encoder failed: %v\n", err)

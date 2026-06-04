@@ -115,6 +115,67 @@ func TestScreenFrameSourceReturnsDecodableFrame(t *testing.T) {
 	}
 }
 
+func TestScreenFrameSourceReturnsMultiplePackets(t *testing.T) {
+	symRec, err := LoadLibcimbarSymbols(testSymbolDir(t))
+	if err != nil {
+		t.Fatalf("LoadLibcimbarSymbols failed: %v", err)
+	}
+
+	gridSize := 40
+	scale := 1
+	packetsPerFrame := 2
+	blockSize, err := PayloadCapacityBytesWithECCAndColorBitsAndPackets(gridSize, 3, codec.ColorBits, packetsPerFrame)
+	if err != nil {
+		t.Fatalf("PayloadCapacityBytesWithECCAndColorBitsAndPackets failed: %v", err)
+	}
+	packetCodec, err := NewFramePacketCodecWithColorBitsAndPackets(gridSize, 3, blockSize, codec.ColorBits, packetsPerFrame)
+	if err != nil {
+		t.Fatalf("NewFramePacketCodecWithColorBitsAndPackets failed: %v", err)
+	}
+	fountainEnc, err := fountain.NewEncoder(deterministicBytes(blockSize*3), blockSize)
+	if err != nil {
+		t.Fatalf("NewEncoder failed: %v", err)
+	}
+	source := &screenFrameSource{
+		codecEnc:        codec.NewEncoder(symRec, colorpkg.NewRecognizer4Color(), CellSize(scale), gridSize),
+		fountainEnc:     fountainEnc,
+		fileSize:        fountainEnc.FileSize(),
+		width:           gridSize * CellSize(scale),
+		height:          gridSize * CellSize(scale),
+		packetsPerFrame: packetsPerFrame,
+		packetCodec:     packetCodec,
+	}
+
+	img, err := source.NextImage()
+	if err != nil {
+		t.Fatalf("NextImage failed: %v", err)
+	}
+	encodedFrame, err := codec.NewDecoder(symRec, colorpkg.NewRecognizer4Color(), CellSize(scale), gridSize).Decode(img)
+	if err != nil {
+		t.Fatalf("decode codec frame: %v", err)
+	}
+	var packetBuf []byte
+	for i := 0; i < packetsPerFrame; i++ {
+		start := i * packetCodec.EncodedSize()
+		end := start + packetCodec.EncodedSize()
+		packet, err := packetCodec.DecodeInto(encodedFrame[start:end], packetBuf)
+		if err != nil {
+			t.Fatalf("DecodeInto packet %d failed: %v", i, err)
+		}
+		packetBuf = packet
+		frame, err := ParsePacket(packet, blockSize)
+		if err != nil {
+			t.Fatalf("ParsePacket %d failed: %v", i, err)
+		}
+		if frame.FrameID != uint32(i) {
+			t.Fatalf("packet %d frame id = %d, want %d", i, frame.FrameID, i)
+		}
+		if frame.FileSize != fountainEnc.FileSize() {
+			t.Fatalf("packet %d file size = %d, want %d", i, frame.FileSize, fountainEnc.FileSize())
+		}
+	}
+}
+
 func BenchmarkScreenFrameSourceNextBGRASystematic(b *testing.B) {
 	symRec, err := LoadLibcimbarSymbols(DefaultSymbolDir)
 	if err != nil {

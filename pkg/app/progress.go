@@ -9,27 +9,30 @@ import (
 )
 
 type screenEncoderProgress struct {
-	out            io.Writer
-	start          time.Time
-	last           time.Time
-	fileSize       int
-	md5            string
-	compression    uint32
-	compressedSize int
-	transferSize   int
-	blockSize      int
-	blockCount     int
-	frameCapacity  int
-	payloadBytes   int
-	colorBits      int
-	eccPercent     int
-	eccBytes       int
-	packetBytes    int
-	encoded        uint64
-	presented      uint64
-	lastEncoded    uint64
-	lastPresented  uint64
-	mu             sync.Mutex
+	out                io.Writer
+	start              time.Time
+	last               time.Time
+	fileSize           int
+	md5                string
+	compression        uint32
+	compressedSize     int
+	transferSize       int
+	blockSize          int
+	blockCount         int
+	frameCapacity      int
+	payloadBytes       int
+	colorBits          int
+	eccPercent         int
+	eccBytes           int
+	packetBytes        int
+	packetsPerFrame    int
+	encodedFrames      uint64
+	encodedPackets     uint64
+	presented          uint64
+	lastEncodedFrames  uint64
+	lastEncodedPackets uint64
+	lastPresented      uint64
+	mu                 sync.Mutex
 }
 
 func newScreenEncoderProgress(out io.Writer, result *EncodeResult) *screenEncoderProgress {
@@ -38,22 +41,23 @@ func newScreenEncoderProgress(out io.Writer, result *EncodeResult) *screenEncode
 	}
 	now := time.Now()
 	return &screenEncoderProgress{
-		out:            out,
-		start:          now,
-		last:           now,
-		fileSize:       result.FileSize,
-		md5:            result.MD5,
-		compression:    result.Compression,
-		compressedSize: result.CompressedSize,
-		transferSize:   result.TransferSize,
-		blockSize:      result.BlockSize,
-		blockCount:     result.BlockCount,
-		frameCapacity:  result.FrameCapacity,
-		payloadBytes:   result.PayloadCapacity,
-		colorBits:      result.ColorBits,
-		eccPercent:     result.ECCPercent,
-		eccBytes:       result.ECCBytes,
-		packetBytes:    result.PacketBytes,
+		out:             out,
+		start:           now,
+		last:            now,
+		fileSize:        result.FileSize,
+		md5:             result.MD5,
+		compression:     result.Compression,
+		compressedSize:  result.CompressedSize,
+		transferSize:    result.TransferSize,
+		blockSize:       result.BlockSize,
+		blockCount:      result.BlockCount,
+		frameCapacity:   result.FrameCapacity,
+		payloadBytes:    result.PayloadCapacity,
+		colorBits:       result.ColorBits,
+		eccPercent:      result.ECCPercent,
+		eccBytes:        result.ECCBytes,
+		packetBytes:     result.PacketBytes,
+		packetsPerFrame: result.PacketsPerFrame,
 	}
 }
 
@@ -66,13 +70,16 @@ func (p *screenEncoderProgress) startSummary() {
 	if packetBytes == 0 {
 		packetBytes = packetDataBytes
 	}
+	if p.packetsPerFrame <= 0 {
+		p.packetsPerFrame = 1
+	}
 	unusedBytes := p.payloadBytes - p.blockSize
 	if unusedBytes < 0 {
 		unusedBytes = 0
 	}
 	fmt.Fprintf(p.out, "file=%d bytes source_payload=%d bytes compression=%s transfer=%d bytes md5=%s source_blocks=%d\n",
 		p.fileSize, p.compressedSize, SourceCompressionName(p.compression), p.transferSize, p.md5, p.blockCount)
-	fmt.Fprintf(p.out, "per-frame capacity: codec=%d bytes (%d bits), color_bits=%d, actual_packet=%d bytes\n", p.frameCapacity, p.frameCapacity*8, p.colorBits, packetBytes)
+	fmt.Fprintf(p.out, "per-frame capacity: codec=%d bytes (%d bits), color_bits=%d, packets_per_frame=%d, actual_packet=%d bytes\n", p.frameCapacity, p.frameCapacity*8, p.colorBits, p.packetsPerFrame, packetBytes)
 	fmt.Fprintf(p.out, "  header=%d bytes: magic=ACB1 file_size=8 frame_id=4\n", FrameHeaderSize)
 	fmt.Fprintf(p.out, "  data_area=%d bytes after header\n", p.payloadBytes)
 	fmt.Fprintf(p.out, "  fountain_block=%d bytes: one encoded source block; last source block is zero-padded\n", p.blockSize)
@@ -81,17 +88,18 @@ func (p *screenEncoderProgress) startSummary() {
 	} else {
 		fmt.Fprintf(p.out, "  ecc=disabled: 0 bytes overhead\n")
 	}
-	fmt.Fprintf(p.out, "  unused_codec_capacity=%d bytes\n", p.frameCapacity-packetBytes)
-	fmt.Fprintf(p.out, "  unused_data_area=%d bytes\n", unusedBytes)
+	fmt.Fprintf(p.out, "  unused_codec_capacity=%d bytes\n", p.frameCapacity-p.packetBytes*p.packetsPerFrame)
+	fmt.Fprintf(p.out, "  unused_data_area_per_packet=%d bytes\n", unusedBytes)
 }
 
-func (p *screenEncoderProgress) noteEncoded() {
+func (p *screenEncoderProgress) noteEncoded(packetCount int) {
 	if p == nil {
 		return
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.encoded++
+	p.encodedFrames++
+	p.encodedPackets += uint64(packetCount)
 	p.render(false)
 }
 
@@ -125,9 +133,10 @@ func (p *screenEncoderProgress) render(force bool) {
 		window = time.Nanosecond
 	}
 
-	encodeFPS := float64(p.encoded-p.lastEncoded) / window.Seconds()
+	frameFPS := float64(p.encodedFrames-p.lastEncodedFrames) / window.Seconds()
+	packetFPS := float64(p.encodedPackets-p.lastEncodedPackets) / window.Seconds()
 	refreshFPS := float64(p.presented-p.lastPresented) / window.Seconds()
-	done := p.encoded
+	done := p.encodedPackets
 	if uint64(p.blockCount) < done {
 		done = uint64(p.blockCount)
 	}
@@ -136,15 +145,16 @@ func (p *screenEncoderProgress) render(force bool) {
 		progress = float64(done) / float64(p.blockCount)
 	}
 	extra := ""
-	if p.encoded > uint64(p.blockCount) {
-		extra = fmt.Sprintf(" +%d", p.encoded-uint64(p.blockCount))
+	if p.encodedPackets > uint64(p.blockCount) {
+		extra = fmt.Sprintf(" +%d", p.encodedPackets-uint64(p.blockCount))
 	}
 
-	fmt.Fprintf(p.out, "\r%s encode_fps=%5.1f refresh_fps=%5.1f frames=%d/%d%s elapsed=%s%s",
-		progressBar(progress, 24), encodeFPS, refreshFPS, done, p.blockCount, extra, shortDuration(now.Sub(p.start)), clearLine())
+	fmt.Fprintf(p.out, "\r%s frame_fps=%5.1f packet_fps=%5.1f refresh_fps=%5.1f packets=%d/%d%s elapsed=%s%s",
+		progressBar(progress, 24), frameFPS, packetFPS, refreshFPS, done, p.blockCount, extra, shortDuration(now.Sub(p.start)), clearLine())
 
 	p.last = now
-	p.lastEncoded = p.encoded
+	p.lastEncodedFrames = p.encodedFrames
+	p.lastEncodedPackets = p.encodedPackets
 	p.lastPresented = p.presented
 }
 

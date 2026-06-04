@@ -32,6 +32,7 @@ type EncodeResult struct {
 	MD5             string
 	Compression     uint32
 	ColorBits       int
+	PacketsPerFrame int
 }
 
 func EncodeFileToPNGFrames(inputPath string, outputDir string, gridSize int, scale int, symbolDir string, redundancyPercent int, blockSize int, eccPercent int) (*EncodeResult, error) {
@@ -154,6 +155,7 @@ func EncodeFileToPNGFramesWithOptions(inputPath string, outputDir string, gridSi
 		MD5:             md5Hex,
 		Compression:     sourceCompression(compress),
 		ColorBits:       colorBits,
+		PacketsPerFrame: 1,
 	}, nil
 }
 

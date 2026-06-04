@@ -16,33 +16,35 @@ import (
 )
 
 type ScreenEncodeConfig struct {
-	InputPath  string
-	GridSize   int
-	Scale      int
-	SymbolDir  string
-	BlockSize  int
-	ECCPercent int
-	NoZstd     bool
-	ColorBits  int
-	Region     string
-	FPS        int
-	Addr       string
-	Open       bool
-	Progress   io.Writer
+	InputPath       string
+	GridSize        int
+	Scale           int
+	SymbolDir       string
+	BlockSize       int
+	ECCPercent      int
+	NoZstd          bool
+	ColorBits       int
+	PacketsPerFrame int
+	Region          string
+	FPS             int
+	Addr            string
+	Open            bool
+	Progress        io.Writer
 }
 
 type ScreenDecodeConfig struct {
-	OutputPath string
-	GridSize   int
-	Scale      int
-	SymbolDir  string
-	BlockSize  int
-	ECCPercent int
-	ColorBits  int
-	Region     string
-	FPS        int
-	Timeout    time.Duration
-	Progress   io.Writer
+	OutputPath      string
+	GridSize        int
+	Scale           int
+	SymbolDir       string
+	BlockSize       int
+	ECCPercent      int
+	ColorBits       int
+	PacketsPerFrame int
+	Region          string
+	FPS             int
+	Timeout         time.Duration
+	Progress        io.Writer
 }
 
 func DisplayBounds() []image.Rectangle {
@@ -62,8 +64,9 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 		return nil, err
 	}
 	colorBits := normalizeColorBits(cfg.ColorBits)
+	packetsPerFrame := normalizePacketsPerFrame(cfg.PacketsPerFrame)
 
-	payloadCapacity, err := PayloadCapacityBytesWithECCAndColorBits(cfg.GridSize, cfg.ECCPercent, colorBits)
+	payloadCapacity, err := PayloadCapacityBytesWithECCAndColorBitsAndPackets(cfg.GridSize, cfg.ECCPercent, colorBits, packetsPerFrame)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +77,7 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 	if blockSize <= 0 || blockSize > payloadCapacity {
 		return nil, fmt.Errorf("block size %d exceeds frame payload capacity %d", blockSize, payloadCapacity)
 	}
-	packetCodec, err := NewFramePacketCodecWithColorBits(cfg.GridSize, cfg.ECCPercent, blockSize, colorBits)
+	packetCodec, err := NewFramePacketCodecWithColorBitsAndPackets(cfg.GridSize, cfg.ECCPercent, blockSize, colorBits, packetsPerFrame)
 	if err != nil {
 		return nil, err
 	}
@@ -126,19 +129,21 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 		MD5:             md5Hex,
 		Compression:     sourceCompression(compress),
 		ColorBits:       colorBits,
+		PacketsPerFrame: packetsPerFrame,
 	}
 	progress := newScreenEncoderProgress(cfg.Progress, result)
 	progress.startSummary()
 	defer progress.finishLine()
 
 	source := &screenFrameSource{
-		codecEnc:    codecEnc,
-		fountainEnc: fountainEnc,
-		fileSize:    len(sourceData),
-		width:       imageSize,
-		height:      imageSize,
-		progress:    progress,
-		packetCodec: packetCodec,
+		codecEnc:        codecEnc,
+		fountainEnc:     fountainEnc,
+		fileSize:        len(sourceData),
+		width:           imageSize,
+		height:          imageSize,
+		progress:        progress,
+		packetCodec:     packetCodec,
+		packetsPerFrame: packetsPerFrame,
 	}
 
 	if err := runScreenEncoderBackend(cfg, source, rect); err != nil {
@@ -158,8 +163,9 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 		return err
 	}
 	colorBits := normalizeColorBits(cfg.ColorBits)
+	packetsPerFrame := normalizePacketsPerFrame(cfg.PacketsPerFrame)
 
-	payloadCapacity, err := PayloadCapacityBytesWithECCAndColorBits(cfg.GridSize, cfg.ECCPercent, colorBits)
+	payloadCapacity, err := PayloadCapacityBytesWithECCAndColorBitsAndPackets(cfg.GridSize, cfg.ECCPercent, colorBits, packetsPerFrame)
 	if err != nil {
 		return err
 	}
@@ -170,7 +176,7 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 	if blockSize <= 0 || blockSize > payloadCapacity {
 		return fmt.Errorf("block size %d exceeds frame payload capacity %d", blockSize, payloadCapacity)
 	}
-	packetCodec, err := NewFramePacketCodecWithColorBits(cfg.GridSize, cfg.ECCPercent, blockSize, colorBits)
+	packetCodec, err := NewFramePacketCodecWithColorBitsAndPackets(cfg.GridSize, cfg.ECCPercent, blockSize, colorBits, packetsPerFrame)
 	if err != nil {
 		return err
 	}
@@ -221,7 +227,7 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 		<-captureDone
 	}()
 
-	var encodedPacketBuf []byte
+	var encodedFrameBuf []byte
 	var packetBuf []byte
 	seenFrameIDs := make(map[uint32]struct{})
 	for time.Now().Before(deadline) {
@@ -249,56 +255,65 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 			}
 		}
 
-		encodedPacket, err := decodeCapturedFrame(codecDec, captured, encodedPacketBuf)
+		encodedFrame, err := decodeCapturedFrame(codecDec, captured, encodedFrameBuf)
 		recycleCapturedFrame(captured, freeBuffers)
 		if err != nil {
 			progress.noteInvalid()
 			continue
 		}
 		progress.noteDecoded()
-		encodedPacketBuf = encodedPacket
-		packet, err := packetCodec.DecodeInto(encodedPacket, packetBuf)
-		if err != nil {
-			progress.noteInvalid()
-			continue
-		}
-		packetBuf = packet
-		frame, err := ParsePacket(packet, blockSize)
-		if err != nil {
-			progress.noteInvalid()
-			continue
-		}
-		if fountainDec == nil {
-			fileSize = frame.FileSize
-			blockCount = blockCountForFile(fileSize, blockSize)
-			fountainDec, err = fountain.NewDecoder(fileSize, blockSize, blockCount)
+		encodedFrameBuf = encodedFrame
+		packetBytes := packetCodec.EncodedSize()
+		for packetIndex := 0; packetIndex < packetsPerFrame; packetIndex++ {
+			start := packetIndex * packetBytes
+			end := start + packetBytes
+			if end > len(encodedFrame) {
+				progress.noteInvalid()
+				continue
+			}
+			packet, err := packetCodec.DecodeInto(encodedFrame[start:end], packetBuf)
 			if err != nil {
-				return err
+				progress.noteInvalid()
+				continue
 			}
-			progress.noteStarted(fileSize, blockCount)
-		} else if frame.FileSize != fileSize {
-			progress.noteInvalid()
-			continue
-		}
-		if _, ok := seenFrameIDs[frame.FrameID]; ok {
-			progress.noteValid(fountainDec.Rank(), false)
-			continue
-		}
-		seenFrameIDs[frame.FrameID] = struct{}{}
-		added, err := fountainDec.AddFrame(frame.FrameID, frame.Payload)
-		if err != nil {
-			return fmt.Errorf("add captured frame: %w", err)
-		}
-		progress.noteValid(fountainDec.Rank(), added)
-		if fountainDec.Complete() {
-			result, err := fountainDec.Decode()
+			packetBuf = packet
+			frame, err := ParsePacket(packet, blockSize)
 			if err != nil {
-				return err
+				progress.noteInvalid()
+				continue
 			}
-			if _, err := WriteSourceDataToFile(result, cfg.OutputPath); err != nil {
-				return fmt.Errorf("write decoded source: %w", err)
+			if fountainDec == nil {
+				fileSize = frame.FileSize
+				blockCount = blockCountForFile(fileSize, blockSize)
+				fountainDec, err = fountain.NewDecoder(fileSize, blockSize, blockCount)
+				if err != nil {
+					return err
+				}
+				progress.noteStarted(fileSize, blockCount)
+			} else if frame.FileSize != fileSize {
+				progress.noteInvalid()
+				continue
 			}
-			return nil
+			if _, ok := seenFrameIDs[frame.FrameID]; ok {
+				progress.noteValid(fountainDec.Rank(), false)
+				continue
+			}
+			seenFrameIDs[frame.FrameID] = struct{}{}
+			added, err := fountainDec.AddFrame(frame.FrameID, frame.Payload)
+			if err != nil {
+				return fmt.Errorf("add captured frame: %w", err)
+			}
+			progress.noteValid(fountainDec.Rank(), added)
+			if fountainDec.Complete() {
+				result, err := fountainDec.Decode()
+				if err != nil {
+					return err
+				}
+				if _, err := WriteSourceDataToFile(result, cfg.OutputPath); err != nil {
+					return fmt.Errorf("write decoded source: %w", err)
+				}
+				return nil
+			}
 		}
 	}
 
@@ -385,48 +400,81 @@ type screenFrameSource struct {
 	width            int
 	height           int
 	progress         *screenEncoderProgress
+	packetsPerFrame  int
 	blockBuf         []byte
 	packetBuf        []byte
+	frameBuf         []byte
 	encodedPacketBuf []byte
 	packetCodec      interface {
 		EncodeInto([]byte, []byte) ([]byte, error)
+		EncodedSize() int
 	}
 	mu sync.Mutex
 }
 
 func (s *screenFrameSource) NextImage() (*image.RGBA, error) {
 	s.mu.Lock()
-	packet, err := s.nextPacketLocked()
+	frame, packetCount, err := s.nextFrameLocked()
 	if err != nil {
 		s.mu.Unlock()
 		return nil, err
 	}
-	packet = append([]byte(nil), packet...)
+	frame = append([]byte(nil), frame...)
 	s.mu.Unlock()
 
-	img, err := s.codecEnc.Encode(packet)
+	img, err := s.codecEnc.Encode(frame)
 	if err != nil {
 		return nil, err
 	}
-	s.progress.noteEncoded()
+	s.progress.noteEncoded(packetCount)
 	return img, nil
 }
 
 func (s *screenFrameSource) NextBGRA(dst []byte) ([]byte, error) {
 	s.mu.Lock()
-	packet, err := s.nextPacketLocked()
+	frame, packetCount, err := s.nextFrameLocked()
 	if err != nil {
 		s.mu.Unlock()
 		return nil, err
 	}
-	pixels, err := s.codecEnc.EncodeBGRA(packet, dst)
+	pixels, err := s.codecEnc.EncodeBGRA(frame, dst)
 	s.mu.Unlock()
 
 	if err != nil {
 		return nil, err
 	}
-	s.progress.noteEncoded()
+	s.progress.noteEncoded(packetCount)
 	return pixels, nil
+}
+
+func (s *screenFrameSource) nextFrameLocked() ([]byte, int, error) {
+	packetsPerFrame := s.packetsPerFrame
+	if packetsPerFrame <= 0 {
+		packetsPerFrame = 1
+	}
+	packetBytes := 0
+	if s.packetCodec != nil {
+		packetBytes = s.packetCodec.EncodedSize()
+	}
+	if packetBytes <= 0 {
+		packetBytes = FrameHeaderSize + s.fountainEnc.BlockSize()
+	}
+	need := packetBytes * packetsPerFrame
+	if cap(s.frameBuf) < need {
+		s.frameBuf = make([]byte, need)
+	} else {
+		s.frameBuf = s.frameBuf[:need]
+		clear(s.frameBuf)
+	}
+
+	for i := 0; i < packetsPerFrame; i++ {
+		packet, err := s.nextPacketLocked()
+		if err != nil {
+			return nil, 0, err
+		}
+		copy(s.frameBuf[i*packetBytes:(i+1)*packetBytes], packet)
+	}
+	return s.frameBuf, packetsPerFrame, nil
 }
 
 func (s *screenFrameSource) nextPacketLocked() ([]byte, error) {

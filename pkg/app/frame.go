@@ -54,7 +54,11 @@ func PayloadCapacityBytesWithECC(gridSize int, eccPercent int) (int, error) {
 }
 
 func PayloadCapacityBytesWithECCAndColorBits(gridSize int, eccPercent int, colorBits int) (int, error) {
-	packetCapacity, err := PacketDataCapacityBytesWithECCAndColorBits(gridSize, eccPercent, colorBits)
+	return PayloadCapacityBytesWithECCAndColorBitsAndPackets(gridSize, eccPercent, colorBits, 1)
+}
+
+func PayloadCapacityBytesWithECCAndColorBitsAndPackets(gridSize int, eccPercent int, colorBits int, packetsPerFrame int) (int, error) {
+	packetCapacity, err := PacketDataCapacityBytesWithECCAndColorBitsAndPackets(gridSize, eccPercent, colorBits, packetsPerFrame)
 	if err != nil {
 		return 0, err
 	}
@@ -70,11 +74,22 @@ func PacketDataCapacityBytesWithECC(gridSize int, eccPercent int) (int, error) {
 }
 
 func PacketDataCapacityBytesWithECCAndColorBits(gridSize int, eccPercent int, colorBits int) (int, error) {
+	return PacketDataCapacityBytesWithECCAndColorBitsAndPackets(gridSize, eccPercent, colorBits, 1)
+}
+
+func PacketDataCapacityBytesWithECCAndColorBitsAndPackets(gridSize int, eccPercent int, colorBits int, packetsPerFrame int) (int, error) {
+	if packetsPerFrame <= 0 {
+		return 0, fmt.Errorf("packets per frame must be > 0")
+	}
 	frameCapacity := GridCapacityBytesWithColorBits(gridSize, colorBits)
 	if frameCapacity <= 0 {
 		return 0, fmt.Errorf("grid Q=%d color-bits=%d capacity is too small", gridSize, colorBits)
 	}
-	return ecc.MaxPacketDataSize(frameCapacity, eccPercent)
+	packetCapacity := frameCapacity / packetsPerFrame
+	if packetCapacity <= 0 {
+		return 0, fmt.Errorf("grid Q=%d color-bits=%d capacity is too small for %d packets per frame", gridSize, colorBits, packetsPerFrame)
+	}
+	return ecc.MaxPacketDataSize(packetCapacity, eccPercent)
 }
 
 func NewFramePacketCodec(gridSize int, eccPercent int, blockSize int) (*ecc.PacketCodec, error) {
@@ -82,6 +97,10 @@ func NewFramePacketCodec(gridSize int, eccPercent int, blockSize int) (*ecc.Pack
 }
 
 func NewFramePacketCodecWithColorBits(gridSize int, eccPercent int, blockSize int, colorBits int) (*ecc.PacketCodec, error) {
+	return NewFramePacketCodecWithColorBitsAndPackets(gridSize, eccPercent, blockSize, colorBits, 1)
+}
+
+func NewFramePacketCodecWithColorBitsAndPackets(gridSize int, eccPercent int, blockSize int, colorBits int, packetsPerFrame int) (*ecc.PacketCodec, error) {
 	if blockSize <= 0 {
 		return nil, fmt.Errorf("block size must be > 0")
 	}
@@ -91,8 +110,11 @@ func NewFramePacketCodecWithColorBits(gridSize int, eccPercent int, blockSize in
 		return nil, err
 	}
 	frameCapacity := GridCapacityBytesWithColorBits(gridSize, colorBits)
-	if packetCodec.EncodedSize() > frameCapacity {
-		return nil, fmt.Errorf("encoded packet size %d exceeds frame capacity %d", packetCodec.EncodedSize(), frameCapacity)
+	if packetsPerFrame <= 0 {
+		return nil, fmt.Errorf("packets per frame must be > 0")
+	}
+	if packetCodec.EncodedSize()*packetsPerFrame > frameCapacity {
+		return nil, fmt.Errorf("encoded packet size %d * packets %d exceeds frame capacity %d", packetCodec.EncodedSize(), packetsPerFrame, frameCapacity)
 	}
 	return packetCodec, nil
 }
@@ -102,6 +124,13 @@ func CellBitsForColorBits(colorBits int) (int, error) {
 		return 0, fmt.Errorf("color bits must be 1, 2, 3, or 4, got %d", colorBits)
 	}
 	return codec.ShapeBits + colorBits, nil
+}
+
+func normalizePacketsPerFrame(packetsPerFrame int) int {
+	if packetsPerFrame <= 0 {
+		return 1
+	}
+	return packetsPerFrame
 }
 
 func CellSize(scale int) int {

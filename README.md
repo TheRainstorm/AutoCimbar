@@ -120,6 +120,7 @@ decoder 也会在喷泉码恢复完成后校验内置的文件级 MD5；校验�
 - 负数从该屏幕右/下边缘定位；`0:-0:-0` 表示主屏右下角贴边
 - `-fps`：窗口刷新帧率
 - `-color-bits`：颜色通道位数，`1/2/3/4` 对应 2/4/8/16 色；encoder 和 decoder 必须一致
+- `-packets`：每张屏幕图携带的独立 packet 数，默认 1；提高后局部错误只丢对应 packet，encoder 和 decoder 必须一致
 - `-no-zstd`：关闭默认 zstd 压缩，直接传输原始文件数据
 
 按 `Esc` 可以关闭发送窗口。非 Windows 平台当前仍使用 HTTP/浏览器 fallback。
@@ -152,7 +153,7 @@ decoder 也会在喷泉码恢复完成后校验内置的文件级 MD5；校验�
 - `-R 0:-0:-0`：主屏右下角
 - `-R 1:100:200`：第 2 块屏幕，偏移 `(100, 200)`
 
-两端必须使用一致的 `Q`、`B`、`-ecc` 和 `-color-bits`。文件大小会在当前线性喷泉码帧头中发送，decoder 不需要手动指定。
+两端必须使用一致的 `Q`、`B`、`-ecc`、`-color-bits` 和 `-packets`。文件大小会在当前线性喷泉码帧头中发送，decoder 不需要手动指定。
 
 ## 参数参考
 
@@ -165,6 +166,7 @@ decoder 也会在喷泉码恢复完成后校验内置的文件级 MD5；校验�
 -B             cell 缩放倍数，实际 cell 像素为 8 * B
 -ecc           单帧 Reed-Solomon ECC 百分比，默认 3；必须与 decoder 一致
 -color-bits    颜色通道位数，1/2/3/4 表示 2/4/8/16 色；默认 2
+-packets       屏幕模式每张图携带的独立 packet 数，默认 1；必须与 decoder 一致
 -no-zstd       关闭默认 zstd 压缩
 -screen        启用屏幕播放模式
 -R             屏幕播放位置，格式 X:Y 或 SCREEN:X:Y
@@ -185,6 +187,7 @@ decoder 也会在喷泉码恢复完成后校验内置的文件级 MD5；校验�
 -B             cell 缩放倍数，必须与 encoder 一致
 -ecc           单帧 Reed-Solomon ECC 百分比，默认 3；必须与 encoder 一致
 -color-bits    颜色通道位数，1/2/3/4 表示 2/4/8/16 色；默认 2
+-packets       屏幕模式每张图携带的独立 packet 数，默认 1；必须与 encoder 一致
 -screen        启用截图解码模式
 -R             截图区域，格式 SCREEN:X:Y
 -fps           截图频率，默认 60
@@ -217,7 +220,7 @@ go test ./...
 - 当前喷泉码是纯 Go 线性 XOR 喷泉码，decoder 需要知道源块数量；实现方式是在每帧头携带文件大小，用于推导 `blockCount`。
 - 每帧头当前包含 `fileSize(8 bytes) + frameID(4 bytes)`，其余为喷泉编码块；`fileSize` 指喷泉传输数据大小。
 - 原始文件默认会先进行 zstd 压缩，再加一个一次性源数据头，包含原始文件大小、压缩方式和 MD5，用于最终完整性校验；它不是每帧参数。使用 `-no-zstd` 时源数据头会标记为未压缩。
-- `-ecc` 和 `-color-bits` 是运行时约定参数，不写入帧头；开启 ECC 后会减少每帧 fountain payload，并在单帧内添加交织后的 RS 校验字节。
+- `-ecc`、`-color-bits` 和 `-packets` 是运行时约定参数，不写入帧头；开启 ECC 后会减少每个 packet 的 fountain payload，并在 packet 内添加交织后的 RS 校验字节。
 - Windows 屏幕模式使用 Win32 原生窗口；非 Windows 平台暂时使用 HTTP/浏览器 fallback。
 - 暂未实现 GPU 加速和真正的 Wirehair/Raptor 类喷泉码。
 
