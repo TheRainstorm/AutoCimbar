@@ -498,22 +498,14 @@ func (d *Decoder) cellHashBGRA(pix []byte, stride int, x int, y int) uint64 {
 			b := pix[offset]
 			g := pix[offset+1]
 			r := pix[offset+2]
-			gray := uint8((299*uint32(r) + 587*uint32(g) + 114*uint32(b)) / 1000)
-			samples[ty*8+tx] = gray
-			sum += uint64(gray)
+			intensity := maxRGB(r, g, b)
+			samples[ty*8+tx] = intensity
+			sum += uint64(intensity)
 		}
 	}
 
 	threshold := uint8(sum / 64)
-	var hash uint64
-	for _, gray := range samples {
-		bit := uint64(0)
-		if gray > threshold {
-			bit = 1
-		}
-		hash = (hash << 1) | bit
-	}
-	return hash
+	return hashSamples(samples, threshold)
 }
 
 func (d *Decoder) recognizeCellColorBGRA(pix []byte, stride int, x int, y int, shapeID symbol.SymbolID) colorpkg.ColorID {
@@ -633,22 +625,14 @@ func (d *Decoder) cellHashRGBA(img *image.RGBA, x, y int) uint64 {
 			r := img.Pix[pix]
 			g := img.Pix[pix+1]
 			b := img.Pix[pix+2]
-			gray := uint8((299*uint32(r) + 587*uint32(g) + 114*uint32(b)) / 1000)
-			samples[ty*8+tx] = gray
-			sum += uint64(gray)
+			intensity := maxRGB(r, g, b)
+			samples[ty*8+tx] = intensity
+			sum += uint64(intensity)
 		}
 	}
 
 	threshold := uint8(sum / 64)
-	var hash uint64
-	for _, gray := range samples {
-		bit := uint64(0)
-		if gray > threshold {
-			bit = 1
-		}
-		hash = (hash << 1) | bit
-	}
-	return hash
+	return hashSamples(samples, threshold)
 }
 
 func (d *Decoder) recognizeCellColorRGBA(img *image.RGBA, x, y int, shapeID symbol.SymbolID) colorpkg.ColorID {
@@ -682,22 +666,37 @@ func (d *Decoder) cellHash(img image.Image, x, y int) uint64 {
 		for tx := 0; tx < 8; tx++ {
 			sx := x + tx*d.cellSize/8
 			sy := y + ty*d.cellSize/8
-			gray := fastGrayAt(img, sx, sy)
-			samples[ty*8+tx] = gray
-			sum += uint64(gray)
+			r, g, b := fastRGBAt(img, sx, sy)
+			intensity := maxRGB(r, g, b)
+			samples[ty*8+tx] = intensity
+			sum += uint64(intensity)
 		}
 	}
 
 	threshold := uint8(sum / 64)
+	return hashSamples(samples, threshold)
+}
+
+func hashSamples(samples [64]uint8, threshold uint8) uint64 {
 	var hash uint64
-	for _, gray := range samples {
+	for _, intensity := range samples {
 		bit := uint64(0)
-		if gray > threshold {
+		if intensity > threshold {
 			bit = 1
 		}
 		hash = (hash << 1) | bit
 	}
 	return hash
+}
+
+func maxRGB(r, g, b uint8) uint8 {
+	if g > r {
+		r = g
+	}
+	if b > r {
+		r = b
+	}
+	return r
 }
 
 func (d *Decoder) recognizeCellColor(cellImg image.Image, shapeID symbol.SymbolID) colorpkg.ColorID {
