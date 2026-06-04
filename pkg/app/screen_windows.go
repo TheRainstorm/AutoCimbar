@@ -79,6 +79,7 @@ type nativeWindow struct {
 	width  int
 	height int
 	pixels []byte
+	back   []byte
 	err    error
 	mu     sync.Mutex
 }
@@ -215,13 +216,16 @@ func (w *nativeWindow) runFrameLoop(fps int, stop <-chan struct{}) {
 }
 
 func (w *nativeWindow) updateFrame() error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	pixels, err := w.source.NextBGRA(w.pixels)
+	pixels, err := w.source.NextBGRA(w.back)
 	if err != nil {
 		return err
 	}
+
+	w.mu.Lock()
+	w.back = w.pixels
 	w.pixels = pixels
+	w.mu.Unlock()
+
 	w.source.notePresented()
 	return nil
 }
