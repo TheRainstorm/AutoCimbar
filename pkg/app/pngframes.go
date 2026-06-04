@@ -1,8 +1,6 @@
 package app
 
 import (
-	"bytes"
-	"crypto/sha256"
 	"fmt"
 	"image/png"
 	"io/fs"
@@ -13,6 +11,7 @@ import (
 
 	"github.com/autocambar/autocambar/pkg/codec"
 	colorpkg "github.com/autocambar/autocambar/pkg/color"
+	"github.com/autocambar/autocambar/pkg/fountain"
 )
 
 type EncodeResult struct {
@@ -24,24 +23,42 @@ type EncodeResult struct {
 	FrameCapacity   int
 	PayloadCapacity int
 	FileSize        int
+	BlockSize       int
+	BlockCount      int
 }
 
-func EncodeFileToPNGFrames(inputPath string, outputDir string, gridSize int, scale int, symbolDir string) (*EncodeResult, error) {
+func EncodeFileToPNGFrames(inputPath string, outputDir string, gridSize int, scale int, symbolDir string, redundancyPercent int, blockSize int) (*EncodeResult, error) {
 	if gridSize <= 0 {
 		return nil, fmt.Errorf("Q must be > 0")
 	}
 	if scale <= 0 {
 		return nil, fmt.Errorf("B must be > 0")
 	}
+	if redundancyPercent < 0 {
+		return nil, fmt.Errorf("redundancy must be >= 0")
+	}
 
 	payloadCapacity := PayloadCapacityBytes(gridSize)
 	if payloadCapacity <= 0 {
-		return nil, fmt.Errorf("grid Q=%d capacity is too small: frame capacity %d, header %d", gridSize, GridCapacityBytes(gridSize), HeaderSize)
+		return nil, fmt.Errorf("grid Q=%d capacity is too small: frame capacity %d, frame id %d", gridSize, GridCapacityBytes(gridSize), FrameIDSize)
+	}
+	if blockSize == 0 {
+		blockSize = payloadCapacity
+	}
+	if blockSize <= 0 {
+		return nil, fmt.Errorf("block size must be > 0")
+	}
+	if blockSize > payloadCapacity {
+		return nil, fmt.Errorf("block size %d exceeds frame payload capacity %d", blockSize, payloadCapacity)
 	}
 
 	data, err := os.ReadFile(inputPath)
 	if err != nil {
 		return nil, fmt.Errorf("read input file: %w", err)
+	}
+	fountainEnc, err := fountain.NewEncoder(data, blockSize)
+	if err != nil {
+		return nil, err
 	}
 
 	symRec, err := LoadLibcimbarSymbols(symbolDir)
@@ -57,24 +74,16 @@ func EncodeFileToPNGFrames(inputPath string, outputDir string, gridSize int, sca
 		return nil, err
 	}
 
-	fileHash := FileHash(data)
-	frameCount := (len(data) + payloadCapacity - 1) / payloadCapacity
-	if frameCount == 0 {
-		frameCount = 1
+	frameCount := fountainEnc.BlockCount()
+	totalFrames := frameCount + (frameCount*redundancyPercent+99)/100
+	if totalFrames < frameCount {
+		totalFrames = frameCount
 	}
 
-	paths := make([]string, 0, frameCount)
-	for i := 0; i < frameCount; i++ {
-		start := i * payloadCapacity
-		end := start + payloadCapacity
-		if end > len(data) {
-			end = len(data)
-		}
-		if start > len(data) {
-			start = len(data)
-		}
-
-		packet := BuildPacket(uint64(len(data)), uint32(payloadCapacity), uint32(i), uint32(frameCount), fileHash, data[start:end])
+	paths := make([]string, 0, totalFrames)
+	for i := 0; i < totalFrames; i++ {
+		block := fountainEnc.Encode(uint32(i))
+		packet := BuildPacket(block.FrameID, block.Data)
 		img, err := enc.Encode(packet)
 		if err != nil {
 			return nil, fmt.Errorf("encode frame %d: %w", i, err)
@@ -106,15 +115,20 @@ func EncodeFileToPNGFrames(inputPath string, outputDir string, gridSize int, sca
 		FrameCapacity:   GridCapacityBytes(gridSize),
 		PayloadCapacity: payloadCapacity,
 		FileSize:        len(data),
+		BlockSize:       fountainEnc.BlockSize(),
+		BlockCount:      fountainEnc.BlockCount(),
 	}, nil
 }
 
-func DecodePNGFramesToFile(inputPath string, outputPath string, gridSize int, scale int, symbolDir string) error {
+func DecodePNGFramesToFile(inputPath string, outputPath string, gridSize int, scale int, symbolDir string, fileSize int, blockSize int) error {
 	if gridSize <= 0 {
 		return fmt.Errorf("Q must be > 0")
 	}
 	if scale <= 0 {
 		return fmt.Errorf("B must be > 0")
+	}
+	if fileSize < 0 {
+		return fmt.Errorf("file size must be >= 0")
 	}
 
 	paths, err := collectPNGPaths(inputPath)
@@ -124,67 +138,61 @@ func DecodePNGFramesToFile(inputPath string, outputPath string, gridSize int, sc
 	if len(paths) == 0 {
 		return fmt.Errorf("no PNG frames found in %s", inputPath)
 	}
+	payloadCapacity := PayloadCapacityBytes(gridSize)
+	if payloadCapacity <= 0 {
+		return fmt.Errorf("grid Q=%d capacity is too small: frame capacity %d, frame id %d", gridSize, GridCapacityBytes(gridSize), FrameIDSize)
+	}
+	if blockSize == 0 {
+		blockSize = payloadCapacity
+	}
+	if blockSize <= 0 {
+		return fmt.Errorf("block size must be > 0")
+	}
+	if blockSize > payloadCapacity {
+		return fmt.Errorf("block size %d exceeds frame payload capacity %d", blockSize, payloadCapacity)
+	}
+	blockCount := (fileSize + blockSize - 1) / blockSize
+	if blockCount == 0 {
+		blockCount = 1
+	}
 
 	symRec, err := LoadLibcimbarSymbols(symbolDir)
 	if err != nil {
 		return err
 	}
-	dec := codec.NewDecoder(symRec, colorpkg.NewRecognizer4Color(), CellSize(scale), gridSize)
-
-	var expected *Frame
-	chunks := make(map[uint32][]byte)
+	codecDec := codec.NewDecoder(symRec, colorpkg.NewRecognizer4Color(), CellSize(scale), gridSize)
+	fountainDec, err := fountain.NewDecoder(fileSize, blockSize, blockCount)
+	if err != nil {
+		return err
+	}
 	for _, path := range paths {
-		frame, err := decodeFrameFile(dec, path)
+		frame, err := decodeFrameFile(codecDec, path, blockSize)
 		if err != nil {
 			return err
 		}
-
-		if expected == nil {
-			expected = frame
-		} else if frame.FileSize != expected.FileSize ||
-			frame.ChunkSize != expected.ChunkSize ||
-			frame.FrameCount != expected.FrameCount ||
-			frame.FileSHA256 != expected.FileSHA256 {
-			return fmt.Errorf("frame %s belongs to a different transfer", path)
+		if _, err := fountainDec.AddFrame(frame.FrameID, frame.Payload); err != nil {
+			return fmt.Errorf("add frame %s: %w", path, err)
 		}
-
-		if _, exists := chunks[frame.FrameIndex]; !exists {
-			chunks[frame.FrameIndex] = frame.Payload
+		if fountainDec.Complete() {
+			break
 		}
 	}
 
-	if expected == nil {
-		return fmt.Errorf("no decodable frames found")
-	}
-	for i := uint32(0); i < expected.FrameCount; i++ {
-		if _, ok := chunks[i]; !ok {
-			return fmt.Errorf("missing frame %d of %d", i, expected.FrameCount)
-		}
+	if !fountainDec.Complete() {
+		return fmt.Errorf("not enough independent frames: rank %d of %d", fountainDec.Rank(), blockCount)
 	}
 
-	var out bytes.Buffer
-	for i := uint32(0); i < expected.FrameCount; i++ {
-		out.Write(chunks[i])
+	result, err := fountainDec.Decode()
+	if err != nil {
+		return err
 	}
-
-	result := out.Bytes()
-	if uint64(len(result)) < expected.FileSize {
-		return fmt.Errorf("decoded data too short: got %d, need %d", len(result), expected.FileSize)
-	}
-	result = result[:expected.FileSize]
-
-	actualHash := sha256.Sum256(result)
-	if actualHash != expected.FileSHA256 {
-		return fmt.Errorf("file sha256 mismatch")
-	}
-
 	if err := os.WriteFile(outputPath, result, 0644); err != nil {
 		return fmt.Errorf("write output file: %w", err)
 	}
 	return nil
 }
 
-func decodeFrameFile(dec *codec.Decoder, path string) (*Frame, error) {
+func decodeFrameFile(dec *codec.Decoder, path string, blockSize int) (*Frame, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open frame %s: %w", path, err)
@@ -203,7 +211,7 @@ func decodeFrameFile(dec *codec.Decoder, path string) (*Frame, error) {
 		return nil, fmt.Errorf("decode frame %s: %w", path, err)
 	}
 
-	frame, err := ParsePacket(packet)
+	frame, err := ParsePacket(packet, blockSize)
 	if err != nil {
 		return nil, fmt.Errorf("parse frame %s: %w", path, err)
 	}
