@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"image"
@@ -181,16 +182,16 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 		}
 		nextCapture = nextCapture.Add(interval)
 
-		img, err := capturer.Capture()
+		packet, err := capturer.DecodeInto(codecDec, packetBuf)
 		if err != nil {
-			return fmt.Errorf("capture screen: %w", err)
-		}
-		progress.noteCaptured()
-		packet, err := codecDec.DecodeInto(img, packetBuf)
-		if err != nil {
+			if errors.Is(err, ErrScreenCapture) {
+				return fmt.Errorf("capture screen: %w", err)
+			}
+			progress.noteCaptured()
 			progress.noteInvalid()
 			continue
 		}
+		progress.noteCaptured()
 		packetBuf = packet
 		frame, err := ParsePacket(packet, blockSize)
 		if err != nil {

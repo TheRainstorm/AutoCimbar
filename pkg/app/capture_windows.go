@@ -4,9 +4,11 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"image"
 	"unsafe"
 
+	"github.com/autocambar/autocambar/pkg/codec"
 	"github.com/lxn/win"
 )
 
@@ -84,6 +86,16 @@ func (c *screenCapturer) Capture() (*image.RGBA, error) {
 
 	copyBGRAToRGBA(c.img.Pix, c.memptr, c.width, c.height)
 	return c.img, nil
+}
+
+func (c *screenCapturer) DecodeInto(dec *codec.Decoder, dst []byte) ([]byte, error) {
+	if !win.BitBlt(c.memoryDevice, 0, 0, int32(c.width), int32(c.height), c.hdc, int32(c.rect.Min.X), int32(c.rect.Min.Y), win.SRCCOPY) {
+		return nil, fmt.Errorf("%w: BitBlt failed", ErrScreenCapture)
+	}
+
+	stride := c.width * 4
+	pix := unsafe.Slice((*byte)(c.memptr), stride*c.height)
+	return dec.DecodeBGRAInto(pix, c.width, c.height, stride, dst)
 }
 
 func (c *screenCapturer) Close() error {

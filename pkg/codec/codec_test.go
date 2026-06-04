@@ -211,6 +211,33 @@ func TestDecodeIntoMatchesDecode(t *testing.T) {
 	}
 }
 
+func TestDecodeBGRAIntoMatchesDecode(t *testing.T) {
+	symRec, colorRec := createTestRecognizers(t)
+	encoder := NewEncoder(symRec, colorRec, 8, 10)
+	decoder := NewDecoder(symRec, colorRec, 8, 10)
+	data := []byte("decode bgra into should match decode")
+
+	img, err := encoder.Encode(data)
+	if err != nil {
+		t.Fatalf("Encode failed: %v", err)
+	}
+	bgra, err := encoder.EncodeBGRA(data, nil)
+	if err != nil {
+		t.Fatalf("EncodeBGRA failed: %v", err)
+	}
+	decoded, err := decoder.Decode(img)
+	if err != nil {
+		t.Fatalf("Decode failed: %v", err)
+	}
+	into, err := decoder.DecodeBGRAInto(bgra, img.Bounds().Dx(), img.Bounds().Dy(), img.Bounds().Dx()*4, nil)
+	if err != nil {
+		t.Fatalf("DecodeBGRAInto failed: %v", err)
+	}
+	if !bytes.Equal(into, decoded) {
+		t.Fatal("DecodeBGRAInto output differs from Decode")
+	}
+}
+
 // TestDrawCell 测试 cell 绘制
 func TestDrawCell(t *testing.T) {
 	symRec, colorRec := createTestRecognizers(t)
@@ -413,6 +440,27 @@ func BenchmarkDecodeIntoFullFrame(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		var err error
 		dst, err = decoder.DecodeInto(img, dst)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkDecodeBGRAIntoFullFrame(b *testing.B) {
+	symRec, colorRec := createBenchRecognizers(b)
+	encoder := NewEncoder(symRec, colorRec, 8, 50)
+	decoder := NewDecoder(symRec, colorRec, 8, 50)
+
+	data := make([]byte, 1875)
+	bgra, _ := encoder.EncodeBGRA(data, nil)
+	width := 50 * 8
+	stride := width * 4
+	var dst []byte
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var err error
+		dst, err = decoder.DecodeBGRAInto(bgra, width, width, stride, dst)
 		if err != nil {
 			b.Fatal(err)
 		}

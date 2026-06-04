@@ -386,6 +386,33 @@ func (d *Decoder) DecodeInto(img image.Image, dst []byte) ([]byte, error) {
 	return dst, nil
 }
 
+func (d *Decoder) DecodeBGRAInto(pix []byte, width int, height int, stride int, dst []byte) ([]byte, error) {
+	requiredW := d.gridSize * d.cellSize
+	requiredH := d.gridSize * d.cellSize
+	if width < requiredW || height < requiredH {
+		return nil, fmt.Errorf("image too small: got %dx%d, need at least %dx%d", width, height, requiredW, requiredH)
+	}
+	if stride < width*4 {
+		return nil, fmt.Errorf("invalid stride: got %d, need at least %d", stride, width*4)
+	}
+	if len(pix) < stride*height {
+		return nil, fmt.Errorf("pixel buffer too short: got %d, need %d", len(pix), stride*height)
+	}
+
+	numCells := d.gridSize * d.gridSize
+	totalBits := numCells * CellBits
+	numBytes := (totalBits + 7) / 8
+	if cap(dst) < numBytes {
+		dst = make([]byte, numBytes)
+	} else {
+		dst = dst[:numBytes]
+		clear(dst)
+	}
+
+	d.decodeBGRAInto(pix, stride, numCells, dst)
+	return dst, nil
+}
+
 func (d *Decoder) decodeRGBAInto(img *image.RGBA, bounds image.Rectangle, numCells int, dst []byte) {
 	for i := 0; i < numCells; i++ {
 		x := bounds.Min.X + (i%d.gridSize)*d.cellSize
@@ -394,6 +421,18 @@ func (d *Decoder) decodeRGBAInto(img *image.RGBA, bounds image.Rectangle, numCel
 		hash := d.cellHashRGBA(img, x, y)
 		shapeID, _ := d.symbolRecognizer.RecognizeHash(hash)
 		colorID := d.recognizeCellColorRGBA(img, x, y, shapeID)
+		writeCellBits(dst, i, (uint8(colorID)<<ShapeBits)|uint8(shapeID))
+	}
+}
+
+func (d *Decoder) decodeBGRAInto(pix []byte, stride int, numCells int, dst []byte) {
+	for i := 0; i < numCells; i++ {
+		x := (i % d.gridSize) * d.cellSize
+		y := (i / d.gridSize) * d.cellSize
+
+		hash := d.cellHashBGRA(pix, stride, x, y)
+		shapeID, _ := d.symbolRecognizer.RecognizeHash(hash)
+		colorID := d.recognizeCellColorBGRA(pix, stride, x, y, shapeID)
 		writeCellBits(dst, i, (uint8(colorID)<<ShapeBits)|uint8(shapeID))
 	}
 }
@@ -409,6 +448,59 @@ func writeCellBits(dst []byte, cellIndex int, bits uint8) {
 		}
 		bitIndex++
 	}
+}
+
+func (d *Decoder) cellHashBGRA(pix []byte, stride int, x int, y int) uint64 {
+	var samples [64]uint8
+	var sum uint64
+
+	for ty := 0; ty < 8; ty++ {
+		for tx := 0; tx < 8; tx++ {
+			sx := x + tx*d.cellSize/8
+			sy := y + ty*d.cellSize/8
+			offset := sy*stride + sx*4
+			b := pix[offset]
+			g := pix[offset+1]
+			r := pix[offset+2]
+			gray := uint8((299*uint32(r) + 587*uint32(g) + 114*uint32(b)) / 1000)
+			samples[ty*8+tx] = gray
+			sum += uint64(gray)
+		}
+	}
+
+	threshold := uint8(sum / 64)
+	var hash uint64
+	for _, gray := range samples {
+		bit := uint64(0)
+		if gray > threshold {
+			bit = 1
+		}
+		hash = (hash << 1) | bit
+	}
+	return hash
+}
+
+func (d *Decoder) recognizeCellColorBGRA(pix []byte, stride int, x int, y int, shapeID symbol.SymbolID) colorpkg.ColorID {
+	if shapeID >= symbol.NumSymbols || len(d.foregroundPixels[shapeID]) == 0 {
+		return colorpkg.ColorID(0)
+	}
+
+	var sumR, sumG, sumB uint64
+	for _, p := range d.foregroundPixels[shapeID] {
+		offset := (y+p.Y)*stride + (x+p.X)*4
+		sumB += uint64(pix[offset])
+		sumG += uint64(pix[offset+1])
+		sumR += uint64(pix[offset+2])
+	}
+	count := uint64(len(d.foregroundPixels[shapeID]))
+	avg := color.RGBA{
+		R: uint8(sumR / count),
+		G: uint8(sumG / count),
+		B: uint8(sumB / count),
+		A: 255,
+	}
+	colorID, _ := d.colorRecognizer.RecognizeColorRGB(avg)
+	return colorID
 }
 
 func (d *Decoder) decodeViaCells(img image.Image) ([]byte, error) {
