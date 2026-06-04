@@ -29,5 +29,5 @@ python encoder.py -i in.txt -Q 14 -B 2 -R -0:-0
 python decoder.py -Q 14 -B 2 -R 2:-0:-0
 ```
 
-- libcimbar 中颜色通道是 2-3 bit，形状通道是 4bit，每个 cell 大小是 4x4 像素。我们这里的像素还需要通过 B 来缩放控制实际对应屏幕像素是多少。
+- libcimbar 中颜色通道是 2-3 bit，形状通道是 4bit，每个 tile 大小是 8x8 像素。我们这里的像素还需要通过 B 来缩放控制实际对应屏幕像素是多少。
 - 二维码中的定位标记可以丢掉。我们的场景encode 和 decode 区域是手动指定的不需要定位标记。
