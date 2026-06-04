@@ -98,8 +98,8 @@ func NewFramePacketCodecWithColorBits(gridSize int, eccPercent int, blockSize in
 }
 
 func CellBitsForColorBits(colorBits int) (int, error) {
-	if colorBits != 2 && colorBits != 4 {
-		return 0, fmt.Errorf("color bits must be 2 or 4, got %d", colorBits)
+	if colorBits < 1 || colorBits > 4 {
+		return 0, fmt.Errorf("color bits must be 1, 2, 3, or 4, got %d", colorBits)
 	}
 	return codec.ShapeBits + colorBits, nil
 }

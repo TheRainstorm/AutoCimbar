@@ -895,8 +895,8 @@ func (d *Decoder) cellsToBytes(cells []Cell) []byte {
 }
 
 func validateColorBits(colorRecognizer *colorpkg.Recognizer, colorBits int) error {
-	if colorBits != 2 && colorBits != 4 {
-		return fmt.Errorf("color bits must be 2 or 4, got %d", colorBits)
+	if colorBits < 1 || colorBits > 4 {
+		return fmt.Errorf("color bits must be 1, 2, 3, or 4, got %d", colorBits)
 	}
 	if colorRecognizer == nil {
 		return fmt.Errorf("color recognizer is nil")

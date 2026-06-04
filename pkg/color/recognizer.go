@@ -19,11 +19,21 @@ const (
 	// ColorBlack is kept as a compatibility alias for older callers.
 	ColorBlack ColorID = ColorGreen
 
+	// NumColors2 2 色模式的颜色数量
+	NumColors2 = 2
 	// NumColors4 4 色模式的颜色数量
 	NumColors4 = 4
+	// NumColors8 8 色模式的颜色数量
+	NumColors8 = 8
 	// NumColors16 16 色模式的颜色数量
 	NumColors16 = 16
 )
+
+// Color2Palette 2 色调色板。使用 4 色模式的前 2 项，便于低误码链路测试。
+var Color2Palette = []color.RGBA{
+	{R: 0, G: 255, B: 0, A: 255},     // 绿色
+	{R: 255, G: 255, B: 255, A: 255}, // 白色
+}
 
 // Color4Palette 4 色调色板（高对比度）
 var Color4Palette = []color.RGBA{
@@ -31,6 +41,18 @@ var Color4Palette = []color.RGBA{
 	{R: 255, G: 255, B: 255, A: 255}, // 白色
 	{R: 255, G: 0, B: 0, A: 255},     // 红色
 	{R: 0, G: 0, B: 255, A: 255},     // 蓝色
+}
+
+// Color8Palette 8 色调色板。前 4 项保持 4 色模式的 ID 顺序。
+var Color8Palette = []color.RGBA{
+	{R: 0, G: 255, B: 0, A: 255},
+	{R: 255, G: 255, B: 255, A: 255},
+	{R: 255, G: 0, B: 0, A: 255},
+	{R: 0, G: 0, B: 255, A: 255},
+	{R: 0, G: 255, B: 255, A: 255},
+	{R: 255, G: 255, B: 0, A: 255},
+	{R: 255, G: 0, B: 255, A: 255},
+	{R: 255, G: 128, B: 0, A: 255},
 }
 
 // Color16Palette 16 色调色板。前 4 项保持 4 色模式的 ID 顺序。
@@ -67,9 +89,17 @@ type LABColor struct {
 	L, A, B float64
 }
 
+func NewRecognizer2Color() *Recognizer {
+	return NewRecognizer(Color2Palette)
+}
+
 // NewRecognizer4Color 创建 4 色识别器
 func NewRecognizer4Color() *Recognizer {
 	return NewRecognizer(Color4Palette)
+}
+
+func NewRecognizer8Color() *Recognizer {
+	return NewRecognizer(Color8Palette)
 }
 
 func NewRecognizer16Color() *Recognizer {

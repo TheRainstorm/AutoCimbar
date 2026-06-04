@@ -223,6 +223,7 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 
 	var encodedPacketBuf []byte
 	var packetBuf []byte
+	seenFrameIDs := make(map[uint32]struct{})
 	for time.Now().Before(deadline) {
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
@@ -279,10 +280,16 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 			progress.noteInvalid()
 			continue
 		}
-		if _, err := fountainDec.AddFrame(frame.FrameID, frame.Payload); err != nil {
+		if _, ok := seenFrameIDs[frame.FrameID]; ok {
+			progress.noteValid(fountainDec.Rank(), false)
+			continue
+		}
+		seenFrameIDs[frame.FrameID] = struct{}{}
+		added, err := fountainDec.AddFrame(frame.FrameID, frame.Payload)
+		if err != nil {
 			return fmt.Errorf("add captured frame: %w", err)
 		}
-		progress.noteValid(fountainDec.Rank())
+		progress.noteValid(fountainDec.Rank(), added)
 		if fountainDec.Complete() {
 			result, err := fountainDec.Decode()
 			if err != nil {

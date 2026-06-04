@@ -147,16 +147,53 @@ func TestEncodeDecodeRoundtrip(t *testing.T) {
 	}
 }
 
-func TestBytesToCellsRoundTrip16Color(t *testing.T) {
+func TestBytesToCellsRoundTripVariableColorBits(t *testing.T) {
+	symRec, _ := createTestRecognizers(t)
+	tests := []struct {
+		name         string
+		colorBits    int
+		colorRec     *colorpkg.Recognizer
+		expectedCell int
+	}{
+		{"2color", 1, colorpkg.NewRecognizer2Color(), 5},
+		{"4color", 2, colorpkg.NewRecognizer4Color(), 6},
+		{"8color", 3, colorpkg.NewRecognizer8Color(), 7},
+		{"16color", 4, colorpkg.NewRecognizer16Color(), 8},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			encoder, err := NewEncoderWithColorBits(symRec, tt.colorRec, 8, 10, tt.colorBits)
+			if err != nil {
+				t.Fatalf("NewEncoderWithColorBits failed: %v", err)
+			}
+			decoder, err := NewDecoderWithColorBits(symRec, tt.colorRec, 8, 10, tt.colorBits)
+			if err != nil {
+				t.Fatalf("NewDecoderWithColorBits failed: %v", err)
+			}
+			if encoder.cellBits != tt.expectedCell || decoder.cellBits != tt.expectedCell {
+				t.Fatalf("cellBits encoder=%d decoder=%d, want %d", encoder.cellBits, decoder.cellBits, tt.expectedCell)
+			}
+
+			data := []byte{0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef}
+			cells, err := encoder.bytesToCells(data)
+			if err != nil {
+				t.Fatalf("bytesToCells failed: %v", err)
+			}
+			decoded := decoder.cellsToBytes(cells)
+			if !bytes.Equal(decoded[:len(data)], data) {
+				t.Fatalf("decoded prefix = %x, want %x", decoded[:len(data)], data)
+			}
+		})
+	}
+}
+
+func TestBytesToCells16ColorNibbles(t *testing.T) {
 	symRec, _ := createTestRecognizers(t)
 	colorRec := colorpkg.NewRecognizer16Color()
 	encoder, err := NewEncoderWithColorBits(symRec, colorRec, 8, 10, 4)
 	if err != nil {
 		t.Fatalf("NewEncoderWithColorBits failed: %v", err)
-	}
-	decoder, err := NewDecoderWithColorBits(symRec, colorRec, 8, 10, 4)
-	if err != nil {
-		t.Fatalf("NewDecoderWithColorBits failed: %v", err)
 	}
 
 	data := []byte{0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef}
@@ -171,10 +208,6 @@ func TestBytesToCellsRoundTrip16Color(t *testing.T) {
 		if uint8(cell.Color) != data[i]>>4 || uint8(cell.Shape) != data[i]&0x0f {
 			t.Fatalf("cell %d = color %d shape %d, want color %d shape %d", i, cell.Color, cell.Shape, data[i]>>4, data[i]&0x0f)
 		}
-	}
-	decoded := decoder.cellsToBytes(cells)
-	if !bytes.Equal(decoded[:len(data)], data) {
-		t.Fatalf("decoded prefix = %x, want %x", decoded[:len(data)], data)
 	}
 }
 

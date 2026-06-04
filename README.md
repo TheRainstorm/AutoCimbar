@@ -4,7 +4,7 @@ AutoCamBar 是一个面向远程桌面截屏场景的文件传输工具。发送
 
 当前实现使用 Go：
 
-- 默认 4 色 × 16 符号，每个 cell 编码 6 bits；可用 `-color-bits 4` 启用 16 色 × 16 符号，每个 cell 编码 8 bits
+- 默认 4 色 × 16 符号，每个 cell 编码 6 bits；可用 `-color-bits 1/2/3/4` 选择 2/4/8/16 色，每个 cell 编码 5/6/7/8 bits
 - 默认内置 16 个 libcimbar bitmap 符号，Windows 上单个 exe 可直接运行
 - 原始文件传输前默认使用 zstd 压缩，恢复时流式解压并校验 MD5；可用 `-no-zstd` 关闭
 - 纯 Go 线性喷泉码，支持冗余帧和丢帧恢复
@@ -119,7 +119,7 @@ decoder 也会在喷泉码恢复完成后校验内置的文件级 MD5；校验�
 - `-R X:Y` 或 `-R SCREEN:X:Y`：播放窗口位置；省略 `SCREEN` 时默认主屏 0
 - 负数从该屏幕右/下边缘定位；`0:-0:-0` 表示主屏右下角贴边
 - `-fps`：窗口刷新帧率
-- `-color-bits`：颜色通道位数，`2` 为默认 4 色，`4` 为 16 色；encoder 和 decoder 必须一致
+- `-color-bits`：颜色通道位数，`1/2/3/4` 对应 2/4/8/16 色；encoder 和 decoder 必须一致
 - `-no-zstd`：关闭默认 zstd 压缩，直接传输原始文件数据
 
 按 `Esc` 可以关闭发送窗口。非 Windows 平台当前仍使用 HTTP/浏览器 fallback。
@@ -164,7 +164,7 @@ decoder 也会在喷泉码恢复完成后校验内置的文件级 MD5；校验�
 -Q             grid cell 数，默认 120
 -B             cell 缩放倍数，实际 cell 像素为 8 * B
 -ecc           单帧 Reed-Solomon ECC 百分比，默认 3；必须与 decoder 一致
--color-bits    颜色通道位数，2 表示 4 色，4 表示 16 色；默认 2
+-color-bits    颜色通道位数，1/2/3/4 表示 2/4/8/16 色；默认 2
 -no-zstd       关闭默认 zstd 压缩
 -screen        启用屏幕播放模式
 -R             屏幕播放位置，格式 X:Y 或 SCREEN:X:Y
@@ -184,7 +184,7 @@ decoder 也会在喷泉码恢复完成后校验内置的文件级 MD5；校验�
 -Q             grid cell 数，默认 120；必须与 encoder 一致
 -B             cell 缩放倍数，必须与 encoder 一致
 -ecc           单帧 Reed-Solomon ECC 百分比，默认 3；必须与 encoder 一致
--color-bits    颜色通道位数，2 表示 4 色，4 表示 16 色；默认 2
+-color-bits    颜色通道位数，1/2/3/4 表示 2/4/8/16 色；默认 2
 -screen        启用截图解码模式
 -R             截图区域，格式 SCREEN:X:Y
 -fps           截图频率，默认 60
