@@ -32,3 +32,25 @@ func TestBuildParsePacketRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildPacketIntoRoundTrip(t *testing.T) {
+	payload := []byte{1, 3, 5, 7}
+	buf := make([]byte, 0, FrameHeaderSize+len(payload))
+	packet := BuildPacketInto(buf, 42, 9, payload)
+
+	frame, err := ParsePacket(packet, len(payload))
+	if err != nil {
+		t.Fatalf("ParsePacket failed: %v", err)
+	}
+	if frame.FileSize != 42 {
+		t.Fatalf("FileSize = %d, want 42", frame.FileSize)
+	}
+	if frame.FrameID != 9 {
+		t.Fatalf("FrameID = %d, want 9", frame.FrameID)
+	}
+	for i, got := range frame.Payload {
+		if got != payload[i] {
+			t.Fatalf("Payload[%d] = %d, want %d", i, got, payload[i])
+		}
+	}
+}

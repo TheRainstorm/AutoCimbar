@@ -114,3 +114,68 @@ func TestScreenFrameSourceReturnsDecodableFrame(t *testing.T) {
 		t.Fatalf("payload len = %d, want %d", len(frame.Payload), blockSize)
 	}
 }
+
+func BenchmarkScreenFrameSourceNextBGRASystematic(b *testing.B) {
+	symRec, err := LoadLibcimbarSymbols(DefaultSymbolDir)
+	if err != nil {
+		b.Fatalf("LoadLibcimbarSymbols failed: %v", err)
+	}
+
+	gridSize := 80
+	scale := 1
+	blockSize := PayloadCapacityBytes(gridSize)
+	fountainEnc, err := fountain.NewEncoder(deterministicBytes(64*1024*1024), blockSize)
+	if err != nil {
+		b.Fatalf("NewEncoder failed: %v", err)
+	}
+	source := &screenFrameSource{
+		codecEnc:    codec.NewEncoder(symRec, colorpkg.NewRecognizer4Color(), CellSize(scale), gridSize),
+		fountainEnc: fountainEnc,
+		fileSize:    fountainEnc.FileSize(),
+		width:       gridSize * CellSize(scale),
+		height:      gridSize * CellSize(scale),
+	}
+
+	var dst []byte
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var err error
+		dst, err = source.NextBGRA(dst)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkScreenFrameSourceNextBGRARedundant(b *testing.B) {
+	symRec, err := LoadLibcimbarSymbols(DefaultSymbolDir)
+	if err != nil {
+		b.Fatalf("LoadLibcimbarSymbols failed: %v", err)
+	}
+
+	gridSize := 80
+	scale := 1
+	blockSize := PayloadCapacityBytes(gridSize)
+	fountainEnc, err := fountain.NewEncoder(deterministicBytes(4*1024*1024), blockSize)
+	if err != nil {
+		b.Fatalf("NewEncoder failed: %v", err)
+	}
+	source := &screenFrameSource{
+		codecEnc:    codec.NewEncoder(symRec, colorpkg.NewRecognizer4Color(), CellSize(scale), gridSize),
+		fountainEnc: fountainEnc,
+		fileSize:    fountainEnc.FileSize(),
+		width:       gridSize * CellSize(scale),
+		height:      gridSize * CellSize(scale),
+		frameID:     uint32(fountainEnc.BlockCount()),
+	}
+
+	var dst []byte
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var err error
+		dst, err = source.NextBGRA(dst)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}

@@ -47,6 +47,17 @@ func blockCountForFile(fileSize int, blockSize int) int {
 
 func BuildPacket(fileSize int, frameID uint32, payload []byte) []byte {
 	packet := make([]byte, FrameHeaderSize+len(payload))
+	BuildPacketInto(packet, fileSize, frameID, payload)
+	return packet
+}
+
+func BuildPacketInto(packet []byte, fileSize int, frameID uint32, payload []byte) []byte {
+	need := FrameHeaderSize + len(payload)
+	if cap(packet) < need {
+		packet = make([]byte, need)
+	} else {
+		packet = packet[:need]
+	}
 	binary.BigEndian.PutUint32(packet[0:4], FrameMagic)
 	binary.BigEndian.PutUint64(packet[4:12], uint64(fileSize))
 	binary.BigEndian.PutUint32(packet[12:16], frameID)

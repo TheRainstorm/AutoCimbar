@@ -64,12 +64,25 @@ func (e *Encoder) BlockCount() int {
 }
 
 func (e *Encoder) Encode(frameID uint32) EncodedBlock {
-	coeff := CoeffForFrame(e.blockCount, frameID)
 	out := make([]byte, e.blockSize)
+	e.EncodeInto(frameID, out)
 
+	return EncodedBlock{
+		FrameID: frameID,
+		Data:    out,
+	}
+}
+
+func (e *Encoder) EncodeInto(frameID uint32, out []byte) EncodedBlock {
+	if len(out) != e.blockSize {
+		panic(fmt.Sprintf("invalid output block size: got %d, want %d", len(out), e.blockSize))
+	}
+
+	clear(out)
 	if int(frameID) < e.blockCount {
 		copy(out, e.blocks[frameID])
 	} else {
+		coeff := CoeffForFrame(e.blockCount, frameID)
 		for i := 0; i < e.blockCount; i++ {
 			if CoeffBit(coeff, i) {
 				xorBytes(out, e.blocks[i])

@@ -72,6 +72,26 @@ func TestRecoversMissingSystemBlocksWithRedundancy(t *testing.T) {
 	}
 }
 
+func TestEncodeIntoMatchesEncode(t *testing.T) {
+	data := bytes.Repeat([]byte("abcdef0123456789"), 16)
+	enc, err := NewEncoder(data, 23)
+	if err != nil {
+		t.Fatalf("NewEncoder failed: %v", err)
+	}
+
+	for _, frameID := range []uint32{0, 1, uint32(enc.BlockCount()), uint32(enc.BlockCount() + 7)} {
+		block := enc.Encode(frameID)
+		buf := make([]byte, enc.BlockSize())
+		into := enc.EncodeInto(frameID, buf)
+		if into.FrameID != block.FrameID {
+			t.Fatalf("FrameID = %d, want %d", into.FrameID, block.FrameID)
+		}
+		if !bytes.Equal(into.Data, block.Data) {
+			t.Fatalf("EncodeInto data mismatch for frame %d", frameID)
+		}
+	}
+}
+
 func TestNewDecoderRejectsHugeBlockCount(t *testing.T) {
 	if _, err := NewDecoder(1, 1, MaxDecoderBlockCount+1); err == nil {
 		t.Fatal("expected huge block count error")

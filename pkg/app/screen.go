@@ -235,16 +235,16 @@ type screenFrameSource struct {
 	width       int
 	height      int
 	progress    *screenEncoderProgress
+	blockBuf    []byte
+	packetBuf   []byte
 	mu          sync.Mutex
 }
 
 func (s *screenFrameSource) NextImage() (*image.RGBA, error) {
 	s.mu.Lock()
-	block := s.fountainEnc.Encode(s.frameID)
-	s.frameID++
+	packet := append([]byte(nil), s.nextPacketLocked()...)
 	s.mu.Unlock()
 
-	packet := BuildPacket(s.fileSize, block.FrameID, block.Data)
 	img, err := s.codecEnc.Encode(packet)
 	if err != nil {
 		return nil, err
@@ -255,17 +255,27 @@ func (s *screenFrameSource) NextImage() (*image.RGBA, error) {
 
 func (s *screenFrameSource) NextBGRA(dst []byte) ([]byte, error) {
 	s.mu.Lock()
-	block := s.fountainEnc.Encode(s.frameID)
-	s.frameID++
+	packet := s.nextPacketLocked()
+	pixels, err := s.codecEnc.EncodeBGRA(packet, dst)
 	s.mu.Unlock()
 
-	packet := BuildPacket(s.fileSize, block.FrameID, block.Data)
-	pixels, err := s.codecEnc.EncodeBGRA(packet, dst)
 	if err != nil {
 		return nil, err
 	}
 	s.progress.noteEncoded()
 	return pixels, nil
+}
+
+func (s *screenFrameSource) nextPacketLocked() []byte {
+	if cap(s.blockBuf) < s.fountainEnc.BlockSize() {
+		s.blockBuf = make([]byte, s.fountainEnc.BlockSize())
+	} else {
+		s.blockBuf = s.blockBuf[:s.fountainEnc.BlockSize()]
+	}
+	block := s.fountainEnc.EncodeInto(s.frameID, s.blockBuf)
+	s.frameID++
+	s.packetBuf = BuildPacketInto(s.packetBuf, s.fileSize, block.FrameID, block.Data)
+	return s.packetBuf
 }
 
 func (s *screenFrameSource) notePresented() {
