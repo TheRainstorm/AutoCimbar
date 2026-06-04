@@ -89,9 +89,5 @@ func deterministicBytes(size int) []byte {
 
 func testSymbolDir(t *testing.T) string {
 	t.Helper()
-	path := filepath.Join("..", "..", DefaultSymbolDir)
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("symbol dir not found: %v", err)
-	}
-	return path
+	return DefaultSymbolDir
 }

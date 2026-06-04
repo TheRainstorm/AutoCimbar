@@ -19,7 +19,7 @@ func main() {
 	region := flag.String("R", "", "screen capture region SCREEN:X:Y, negative values anchor from right/bottom")
 	fps := flag.Int("fps", 30, "screen capture rate")
 	timeout := flag.Duration("timeout", 5*time.Minute, "screen decode timeout")
-	symbolDir := flag.String("symbols", app.DefaultSymbolDir, "directory containing 16 libcimbar bitmap symbols")
+	symbolDir := flag.String("symbols", app.DefaultSymbolDir, "optional directory containing 16 libcimbar bitmap symbols; empty uses built-in symbols")
 	flag.Parse()
 
 	if *screen {

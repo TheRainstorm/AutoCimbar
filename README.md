@@ -5,7 +5,7 @@ AutoCamBar 是一个面向远程桌面截屏场景的文件传输工具。发送
 当前实现使用 Go：
 
 - 4 色 × 16 符号，每个 cell 编码 6 bits
-- 默认使用 `third-party/libcimbar/bitmap/4` 下的 16 个 libcimbar bitmap 符号
+- 默认内置 16 个 libcimbar bitmap 符号，Windows 上单个 exe 可直接运行
 - 纯 Go 线性喷泉码，支持冗余帧和丢帧恢复
 - PNG 帧模式：便于测试和离线验证
 - 屏幕模式：encoder 启动本地 HTTP 播放页面，decoder 截图指定区域恢复文件
@@ -15,7 +15,7 @@ AutoCamBar 是一个面向远程桌面截屏场景的文件传输工具。发送
 - Go 1.24 或更高版本；当前开发验证使用 Go 1.26.4
 - Windows 运行时建议使用 PowerShell
 - 屏幕截图功能依赖 `github.com/kbinani/screenshot`
-- 运行目录需要包含 `third-party/libcimbar/bitmap/4`
+- 默认不需要外部 symbol 文件；只有使用 `-symbols` 覆盖内置符号时才需要提供 PNG 目录
 
 如果本机安装了新版 Go 到 `/usr/local/go`，Linux/macOS 下可这样使用：
 
@@ -147,7 +147,7 @@ Get-FileHash .\output.bin
 -fps           屏幕播放帧率
 -addr          HTTP 播放器地址
 -open          是否自动打开浏览器
--symbols       libcimbar bitmap 符号目录
+-symbols       可选 libcimbar bitmap 符号目录；为空时使用内置符号
 ```
 
 ### decoder
@@ -162,7 +162,7 @@ Get-FileHash .\output.bin
 -R             截图区域，格式 SCREEN:X:Y
 -fps           截图频率
 -timeout       截图解码超时
--symbols       libcimbar bitmap 符号目录
+-symbols       可选 libcimbar bitmap 符号目录；为空时使用内置符号
 ```
 
 ## 自动测试
@@ -196,14 +196,14 @@ cmd/
   encoder/       编码器 CLI
   decoder/       解码器 CLI
 pkg/
-  app/           CLI 应用层、PNG 帧、屏幕播放和截图
+  app/           CLI 应用层、内置符号、PNG 帧、屏幕播放和截图
   codec/         彩色符号二维码编解码
   color/         颜色识别
   ecc/           Reed-Solomon 实验模块
   fountain/      纯 Go 线性喷泉码
   symbol/        image hash 符号识别
 third-party/
-  libcimbar/bitmap/4/  默认 16 个符号 bitmap
+  libcimbar/bitmap/4/  内置符号的来源和可选覆盖资源
 ```
 
 ## 许可证
