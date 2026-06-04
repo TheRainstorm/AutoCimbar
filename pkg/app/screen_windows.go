@@ -205,11 +205,11 @@ func nativeWndProc(hwnd uintptr, msg uint32, wparam uintptr, lparam uintptr) uin
 }
 
 func (w *nativeWindow) updateFrame() error {
-	img, err := w.source.NextImage()
+	pixels, err := w.source.NextBGRA(w.pixels)
 	if err != nil {
 		return err
 	}
-	w.pixels = rgbaToBGRAInto(w.pixels, img)
+	w.pixels = pixels
 	w.source.notePresented()
 	return nil
 }
@@ -249,31 +249,6 @@ func beginTimerResolution() func() {
 	return func() {
 		procTimeEndPeriod.Call(1)
 	}
-}
-
-func rgbaToBGRAInto(dst []byte, img *image.RGBA) []byte {
-	bounds := img.Bounds()
-	width := bounds.Dx()
-	height := bounds.Dy()
-	need := width * height * 4
-	if cap(dst) < need {
-		dst = make([]byte, need)
-	} else {
-		dst = dst[:need]
-	}
-	for y := 0; y < height; y++ {
-		srcRow := img.PixOffset(bounds.Min.X, bounds.Min.Y+y)
-		dstRow := y * width * 4
-		for x := 0; x < width; x++ {
-			src := srcRow + x*4
-			di := dstRow + x*4
-			dst[di+0] = img.Pix[src+2]
-			dst[di+1] = img.Pix[src+1]
-			dst[di+2] = img.Pix[src+0]
-			dst[di+3] = img.Pix[src+3]
-		}
-	}
-	return dst
 }
 
 type wndClassEx struct {

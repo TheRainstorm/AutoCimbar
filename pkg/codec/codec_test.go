@@ -163,6 +163,31 @@ func TestEncodeTooLarge(t *testing.T) {
 	}
 }
 
+func TestEncodeBGRAMatchesEncode(t *testing.T) {
+	symRec, colorRec := createTestRecognizers(t)
+	encoder := NewEncoder(symRec, colorRec, 8, 10)
+	data := []byte("bgra output should match rgba output")
+
+	img, err := encoder.Encode(data)
+	if err != nil {
+		t.Fatalf("Encode failed: %v", err)
+	}
+	bgra, err := encoder.EncodeBGRA(data, nil)
+	if err != nil {
+		t.Fatalf("EncodeBGRA failed: %v", err)
+	}
+	if len(bgra) != len(img.Pix) {
+		t.Fatalf("BGRA len = %d, want %d", len(bgra), len(img.Pix))
+	}
+	for i := 0; i < len(img.Pix); i += 4 {
+		if bgra[i+0] != img.Pix[i+2] || bgra[i+1] != img.Pix[i+1] || bgra[i+2] != img.Pix[i+0] || bgra[i+3] != img.Pix[i+3] {
+			t.Fatalf("pixel %d BGRA=(%d,%d,%d,%d) RGBA=(%d,%d,%d,%d)",
+				i/4, bgra[i+0], bgra[i+1], bgra[i+2], bgra[i+3],
+				img.Pix[i+0], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3])
+		}
+	}
+}
+
 // TestDrawCell 测试 cell 绘制
 func TestDrawCell(t *testing.T) {
 	symRec, colorRec := createTestRecognizers(t)
@@ -291,6 +316,35 @@ func BenchmarkEncode(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = encoder.Encode(data)
+	}
+}
+
+func BenchmarkEncodeFullFrame(b *testing.B) {
+	symRec, colorRec := createBenchRecognizers(b)
+	encoder := NewEncoder(symRec, colorRec, 8, 50)
+
+	data := make([]byte, 1875)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = encoder.Encode(data)
+	}
+}
+
+func BenchmarkEncodeBGRAFullFrame(b *testing.B) {
+	symRec, colorRec := createBenchRecognizers(b)
+	encoder := NewEncoder(symRec, colorRec, 8, 50)
+
+	data := make([]byte, 1875)
+	var dst []byte
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var err error
+		dst, err = encoder.EncodeBGRA(data, dst)
+		if err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 

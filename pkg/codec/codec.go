@@ -35,6 +35,7 @@ type Encoder struct {
 	templateMasks    [symbol.NumSymbols][64]bool
 	templatesReady   [symbol.NumSymbols]bool
 	tileCache        [4][symbol.NumSymbols][]byte
+	tileCacheBGRA    [4][symbol.NumSymbols][]byte
 }
 
 // NewEncoder 创建编码器
@@ -58,15 +59,31 @@ func NewEncoder(symbolRecognizer *symbol.Recognizer, colorRecognizer *colorpkg.R
 // data: 待编码的字节数组
 // 返回：二维码图像
 func (e *Encoder) Encode(data []byte) (*image.RGBA, error) {
+	numCells, err := e.encodedCellCount(data)
+	if err != nil {
+		return nil, err
+	}
+
+	return e.renderData(data, numCells), nil
+}
+
+func (e *Encoder) EncodeBGRA(data []byte, dst []byte) ([]byte, error) {
+	numCells, err := e.encodedCellCount(data)
+	if err != nil {
+		return nil, err
+	}
+	return e.renderDataBGRA(data, numCells, dst), nil
+}
+
+func (e *Encoder) encodedCellCount(data []byte) (int, error) {
 	totalBits := len(data) * 8
 	numCells := (totalBits + CellBits - 1) / CellBits
 
 	maxCells := e.gridSize * e.gridSize
 	if numCells > maxCells {
-		return nil, fmt.Errorf("data too large: need %d cells but grid only has %d cells", numCells, maxCells)
+		return 0, fmt.Errorf("data too large: need %d cells but grid only has %d cells", numCells, maxCells)
 	}
-
-	return e.renderData(data, numCells), nil
+	return numCells, nil
 }
 
 // bytesToCells 将字节数组转换为 cells
@@ -159,11 +176,41 @@ func (e *Encoder) renderData(data []byte, numCells int) *image.RGBA {
 	return img
 }
 
+func (e *Encoder) renderDataBGRA(data []byte, numCells int, dst []byte) []byte {
+	imageSize := e.gridSize * e.cellSize
+	need := imageSize * imageSize * 4
+	if cap(dst) < need {
+		dst = make([]byte, need)
+	} else {
+		dst = dst[:need]
+	}
+	maxCells := e.gridSize * e.gridSize
+	if numCells < maxCells {
+		clear(dst)
+		fillBlackAlpha(dst)
+	}
+
+	stride := imageSize * 4
+	for i := 0; i < numCells; i++ {
+		bits := readCellBits(data, i)
+		colorID := bits >> ShapeBits
+		shapeID := bits & 0x0f
+		tile := e.tileCacheBGRA[colorID][shapeID]
+		cellX := i % e.gridSize
+		cellY := i / e.gridSize
+		copyTileRGBA(dst, stride, cellX*e.cellSize*4, cellY*e.cellSize, e.cellSize, tile)
+	}
+
+	return dst
+}
+
 func (e *Encoder) buildTileCache() {
 	for colorID := 0; colorID < 4; colorID++ {
 		cellColor := e.colorRecognizer.GetColor(colorpkg.ColorID(colorID))
 		for shapeID := 0; shapeID < symbol.NumSymbols; shapeID++ {
-			e.tileCache[colorID][shapeID] = e.buildTile(color.RGBA(cellColor), symbol.SymbolID(shapeID))
+			tile := e.buildTile(color.RGBA(cellColor), symbol.SymbolID(shapeID))
+			e.tileCache[colorID][shapeID] = tile
+			e.tileCacheBGRA[colorID][shapeID] = rgbaTileToBGRA(tile)
 		}
 	}
 }
@@ -221,6 +268,17 @@ func fillBlackAlpha(pix []byte) {
 	for i := 3; i < len(pix); i += 4 {
 		pix[i] = 255
 	}
+}
+
+func rgbaTileToBGRA(tile []byte) []byte {
+	out := make([]byte, len(tile))
+	for i := 0; i < len(tile); i += 4 {
+		out[i+0] = tile[i+2]
+		out[i+1] = tile[i+1]
+		out[i+2] = tile[i+0]
+		out[i+3] = tile[i+3]
+	}
+	return out
 }
 
 // drawCell 绘制单个 cell

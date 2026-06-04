@@ -249,6 +249,21 @@ func (s *screenFrameSource) NextImage() (*image.RGBA, error) {
 	return img, nil
 }
 
+func (s *screenFrameSource) NextBGRA(dst []byte) ([]byte, error) {
+	s.mu.Lock()
+	block := s.fountainEnc.Encode(s.frameID)
+	s.frameID++
+	s.mu.Unlock()
+
+	packet := BuildPacket(s.fileSize, block.FrameID, block.Data)
+	pixels, err := s.codecEnc.EncodeBGRA(packet, dst)
+	if err != nil {
+		return nil, err
+	}
+	s.progress.noteEncoded()
+	return pixels, nil
+}
+
 func (s *screenFrameSource) notePresented() {
 	s.progress.notePresented()
 }
