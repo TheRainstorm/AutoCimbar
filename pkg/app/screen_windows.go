@@ -38,6 +38,7 @@ const (
 var (
 	user32 = windows.NewLazySystemDLL("user32.dll")
 	gdi32  = windows.NewLazySystemDLL("gdi32.dll")
+	winmm  = windows.NewLazySystemDLL("winmm.dll")
 
 	procBeginPaint                    = user32.NewProc("BeginPaint")
 	procCreateWindowExW               = user32.NewProc("CreateWindowExW")
@@ -58,6 +59,9 @@ var (
 	procUpdateWindow                  = user32.NewProc("UpdateWindow")
 
 	procStretchDIBits = gdi32.NewProc("StretchDIBits")
+
+	procTimeBeginPeriod = winmm.NewProc("timeBeginPeriod")
+	procTimeEndPeriod   = winmm.NewProc("timeEndPeriod")
 )
 
 func init() {
@@ -84,6 +88,8 @@ var activeNativeWindow *nativeWindow
 func runScreenEncoderBackend(cfg ScreenEncodeConfig, source *screenFrameSource, rect image.Rectangle) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
+	endTimerResolution := beginTimerResolution()
+	defer endTimerResolution()
 
 	win := &nativeWindow{
 		source: source,
@@ -203,7 +209,7 @@ func (w *nativeWindow) updateFrame() error {
 	if err != nil {
 		return err
 	}
-	w.pixels = rgbaToBGRA(img)
+	w.pixels = rgbaToBGRAInto(w.pixels, img)
 	w.source.notePresented()
 	return nil
 }
@@ -235,22 +241,39 @@ func (w *nativeWindow) paint(hwnd uintptr) {
 	procEndPaint.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
 }
 
-func rgbaToBGRA(img *image.RGBA) []byte {
+func beginTimerResolution() func() {
+	ret, _, _ := procTimeBeginPeriod.Call(1)
+	if ret != 0 {
+		return func() {}
+	}
+	return func() {
+		procTimeEndPeriod.Call(1)
+	}
+}
+
+func rgbaToBGRAInto(dst []byte, img *image.RGBA) []byte {
 	bounds := img.Bounds()
 	width := bounds.Dx()
 	height := bounds.Dy()
-	out := make([]byte, width*height*4)
+	need := width * height * 4
+	if cap(dst) < need {
+		dst = make([]byte, need)
+	} else {
+		dst = dst[:need]
+	}
 	for y := 0; y < height; y++ {
+		srcRow := img.PixOffset(bounds.Min.X, bounds.Min.Y+y)
+		dstRow := y * width * 4
 		for x := 0; x < width; x++ {
-			src := img.PixOffset(bounds.Min.X+x, bounds.Min.Y+y)
-			dst := (y*width + x) * 4
-			out[dst+0] = img.Pix[src+2]
-			out[dst+1] = img.Pix[src+1]
-			out[dst+2] = img.Pix[src+0]
-			out[dst+3] = img.Pix[src+3]
+			src := srcRow + x*4
+			di := dstRow + x*4
+			dst[di+0] = img.Pix[src+2]
+			dst[di+1] = img.Pix[src+1]
+			dst[di+2] = img.Pix[src+0]
+			dst[di+3] = img.Pix[src+3]
 		}
 	}
-	return out
+	return dst
 }
 
 type wndClassEx struct {
