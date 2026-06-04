@@ -36,6 +36,41 @@ func TestResolveAxis(t *testing.T) {
 	}
 }
 
+func TestParseRegionSpec(t *testing.T) {
+	tests := []struct {
+		name                string
+		region              string
+		allowImplicitScreen bool
+		wantScreen          int
+		wantX               string
+		wantY               string
+		wantErr             bool
+	}{
+		{name: "implicit screen", region: "-0:-0", allowImplicitScreen: true, wantScreen: 0, wantX: "-0", wantY: "-0"},
+		{name: "explicit screen", region: "2:10:-5", allowImplicitScreen: true, wantScreen: 2, wantX: "10", wantY: "-5"},
+		{name: "decoder requires screen", region: "10:-5", allowImplicitScreen: false, wantErr: true},
+		{name: "decoder explicit screen", region: "1:10:-5", allowImplicitScreen: false, wantScreen: 1, wantX: "10", wantY: "-5"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			screen, x, y, err := parseRegionSpec(tt.region, tt.allowImplicitScreen)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseRegionSpec failed: %v", err)
+			}
+			if screen != tt.wantScreen || x != tt.wantX || y != tt.wantY {
+				t.Fatalf("got %d:%s:%s, want %d:%s:%s", screen, x, y, tt.wantScreen, tt.wantX, tt.wantY)
+			}
+		})
+	}
+}
+
 func TestScreenFrameSourceReturnsDecodableFrame(t *testing.T) {
 	symRec, err := LoadLibcimbarSymbols(testSymbolDir(t))
 	if err != nil {

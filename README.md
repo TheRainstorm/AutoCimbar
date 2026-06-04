@@ -94,13 +94,14 @@ Get-FileHash .\output.bin
 发送端直接打开原生无边框置顶窗口，不需要浏览器。
 
 ```powershell
-.\bin\encoder.exe -screen -i input.bin -Q 50 -B 1 -R -0:-0 -fps 30
+.\bin\encoder.exe -screen -i input.bin -Q 50 -B 1 -R 0:-0:-0 -fps 30
 ```
 
 参数说明：
 
 - `-screen`：使用屏幕播放模式，不写 PNG 文件
-- `-R X:Y`：播放窗口位置，负数从右/下边缘定位；`-0:-0` 表示右下角贴边
+- `-R X:Y` 或 `-R SCREEN:X:Y`：播放窗口位置；省略 `SCREEN` 时默认主屏 0
+- 负数从该屏幕右/下边缘定位；`0:-0:-0` 表示主屏右下角贴边
 - `-fps`：窗口刷新帧率
 - `-block-size`：可选，喷泉码 block 大小；默认使用当前 `Q` 可承载的最大 payload
 
@@ -142,7 +143,7 @@ Get-FileHash .\output.bin
 -redundancy    PNG 模式额外冗余帧百分比，默认 10
 -block-size    喷泉码 block 大小，0 表示使用最大 payload
 -screen        启用屏幕播放模式
--R             屏幕播放位置，格式 X:Y
+-R             屏幕播放位置，格式 X:Y 或 SCREEN:X:Y
 -fps           屏幕播放帧率
 -addr          非 Windows HTTP fallback 的播放器地址
 -open          非 Windows HTTP fallback 是否自动打开浏览器

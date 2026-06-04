@@ -216,47 +216,56 @@ func ResolveEncoderRegion(region string, width int, height int) (image.Rectangle
 	if region == "" {
 		region = "0:0"
 	}
-	bounds := screenshot.GetDisplayBounds(0)
-	parts := strings.Split(region, ":")
-	if len(parts) != 2 {
-		return image.Rectangle{}, fmt.Errorf("encoder region must be X:Y")
-	}
-	x, err := resolveAxis(parts[0], bounds.Min.X, bounds.Max.X, width)
-	if err != nil {
-		return image.Rectangle{}, fmt.Errorf("invalid region x: %w", err)
-	}
-	y, err := resolveAxis(parts[1], bounds.Min.Y, bounds.Max.Y, height)
-	if err != nil {
-		return image.Rectangle{}, fmt.Errorf("invalid region y: %w", err)
-	}
-	return image.Rect(x, y, x+width, y+height), nil
+	return resolveScreenRegion(region, width, height, true, "encoder")
 }
 
 func ResolveDecoderRegion(region string, width int, height int) (image.Rectangle, error) {
 	if region == "" {
 		return image.Rectangle{}, fmt.Errorf("decoder region must be SCREEN:X:Y")
 	}
-	parts := strings.Split(region, ":")
-	if len(parts) != 3 {
-		return image.Rectangle{}, fmt.Errorf("decoder region must be SCREEN:X:Y")
-	}
-	screenIndex, err := strconv.Atoi(parts[0])
+	return resolveScreenRegion(region, width, height, false, "decoder")
+}
+
+func resolveScreenRegion(region string, width int, height int, allowImplicitScreen bool, label string) (image.Rectangle, error) {
+	screenIndex, xToken, yToken, err := parseRegionSpec(region, allowImplicitScreen)
 	if err != nil {
-		return image.Rectangle{}, fmt.Errorf("invalid screen index: %w", err)
+		if allowImplicitScreen {
+			return image.Rectangle{}, fmt.Errorf("%s region must be X:Y or SCREEN:X:Y: %w", label, err)
+		}
+		return image.Rectangle{}, fmt.Errorf("%s region must be SCREEN:X:Y: %w", label, err)
 	}
 	if screenIndex < 0 || screenIndex >= screenshot.NumActiveDisplays() {
 		return image.Rectangle{}, fmt.Errorf("screen index %d out of range", screenIndex)
 	}
 	bounds := screenshot.GetDisplayBounds(screenIndex)
-	x, err := resolveAxis(parts[1], bounds.Min.X, bounds.Max.X, width)
+	x, err := resolveAxis(xToken, bounds.Min.X, bounds.Max.X, width)
 	if err != nil {
 		return image.Rectangle{}, fmt.Errorf("invalid region x: %w", err)
 	}
-	y, err := resolveAxis(parts[2], bounds.Min.Y, bounds.Max.Y, height)
+	y, err := resolveAxis(yToken, bounds.Min.Y, bounds.Max.Y, height)
 	if err != nil {
 		return image.Rectangle{}, fmt.Errorf("invalid region y: %w", err)
 	}
 	return image.Rect(x, y, x+width, y+height), nil
+}
+
+func parseRegionSpec(region string, allowImplicitScreen bool) (screenIndex int, xToken string, yToken string, err error) {
+	parts := strings.Split(region, ":")
+	switch len(parts) {
+	case 2:
+		if !allowImplicitScreen {
+			return 0, "", "", fmt.Errorf("missing screen index")
+		}
+		return 0, parts[0], parts[1], nil
+	case 3:
+		screenIndex, err := strconv.Atoi(parts[0])
+		if err != nil {
+			return 0, "", "", fmt.Errorf("invalid screen index: %w", err)
+		}
+		return screenIndex, parts[1], parts[2], nil
+	default:
+		return 0, "", "", fmt.Errorf("invalid field count %d", len(parts))
+	}
 }
 
 func resolveAxis(token string, min int, max int, size int) (int, error) {

@@ -17,7 +17,7 @@ func main() {
 	redundancy := flag.Int("redundancy", 10, "extra fountain frames as a percentage")
 	blockSize := flag.Int("block-size", 0, "fountain block size in bytes, 0 uses max frame payload")
 	screen := flag.Bool("screen", false, "show frames in a borderless screen window instead of writing PNG files")
-	region := flag.String("R", "0:0", "screen window region X:Y, negative values anchor from right/bottom")
+	region := flag.String("R", "0:0", "screen window region X:Y or SCREEN:X:Y, negative values anchor from right/bottom")
 	fps := flag.Int("fps", 30, "screen frame rate")
 	addr := flag.String("addr", "127.0.0.1:8080", "screen encoder HTTP listen address")
 	open := flag.Bool("open", true, "open the screen encoder page in the default browser")
