@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime"
 
 	"github.com/autocambar/autocambar/pkg/app"
 )
@@ -29,7 +30,11 @@ func main() {
 	}
 
 	if *screen {
-		fmt.Printf("screen encoder serving http://%s/\n", *addr)
+		if runtime.GOOS == "windows" {
+			fmt.Println("screen encoder opening native Windows window")
+		} else {
+			fmt.Printf("screen encoder serving http://%s/\n", *addr)
+		}
 		result, err := app.EncodeFileToScreen(app.ScreenEncodeConfig{
 			InputPath: *input,
 			GridSize:  *q,

@@ -8,7 +8,7 @@ AutoCamBar 是一个面向远程桌面截屏场景的文件传输工具。发送
 - 默认内置 16 个 libcimbar bitmap 符号，Windows 上单个 exe 可直接运行
 - 纯 Go 线性喷泉码，支持冗余帧和丢帧恢复
 - PNG 帧模式：便于测试和离线验证
-- 屏幕模式：encoder 启动本地 HTTP 播放页面，decoder 截图指定区域恢复文件
+- 屏幕模式：Windows 下 encoder 直接打开原生无边框置顶窗口，decoder 截图指定区域恢复文件
 
 ## 环境要求
 
@@ -91,21 +91,20 @@ Get-FileHash .\output.bin
 
 ### 1. 发送端
 
-发送端启动本地 HTTP 播放器，默认地址是 `http://127.0.0.1:8080/`，会尝试自动打开浏览器。
+发送端直接打开原生无边框置顶窗口，不需要浏览器。
 
 ```powershell
-.\bin\encoder.exe -screen -i input.bin -Q 50 -B 1 -R -0:-0 -fps 30 -addr 127.0.0.1:8080
+.\bin\encoder.exe -screen -i input.bin -Q 50 -B 1 -R -0:-0 -fps 30
 ```
 
 参数说明：
 
 - `-screen`：使用屏幕播放模式，不写 PNG 文件
 - `-R X:Y`：播放窗口位置，负数从右/下边缘定位；`-0:-0` 表示右下角贴边
-- `-fps`：浏览器拉取新帧的频率
-- `-addr`：本地 HTTP 监听地址
+- `-fps`：窗口刷新帧率
 - `-block-size`：可选，喷泉码 block 大小；默认使用当前 `Q` 可承载的最大 payload
 
-如果浏览器阻止自动移动窗口，请手动把页面移动到接收端配置的截图区域。
+按 `Esc` 可以关闭发送窗口。非 Windows 平台当前仍使用 HTTP/浏览器 fallback。
 
 ### 2. 接收端
 
@@ -145,8 +144,8 @@ Get-FileHash .\output.bin
 -screen        启用屏幕播放模式
 -R             屏幕播放位置，格式 X:Y
 -fps           屏幕播放帧率
--addr          HTTP 播放器地址
--open          是否自动打开浏览器
+-addr          非 Windows HTTP fallback 的播放器地址
+-open          非 Windows HTTP fallback 是否自动打开浏览器
 -symbols       可选 libcimbar bitmap 符号目录；为空时使用内置符号
 ```
 
@@ -180,13 +179,13 @@ go test ./...
 - 喷泉码恢复
 - PNG 帧端到端恢复
 - 删除部分帧后的喷泉码恢复
-- 屏幕帧 HTTP 输出的可解码性
+- 屏幕帧输出的可解码性
 
 ## 当前限制
 
 - 当前喷泉码是纯 Go 线性 XOR 喷泉码，decoder 需要知道源块数量；实现方式是在每帧头携带文件大小，用于推导 `blockCount`。
 - 每帧头当前包含 `fileSize(8 bytes) + frameID(4 bytes)`，其余为喷泉编码块。
-- 屏幕模式使用浏览器播放帧，浏览器可能限制 `window.moveTo/resizeTo`，必要时需要手动摆放窗口。
+- Windows 屏幕模式使用 Win32 原生窗口；非 Windows 平台暂时使用 HTTP/浏览器 fallback。
 - 暂未实现 GPU 加速和真正的 Wirehair/Raptor 类喷泉码。
 
 ## 项目结构

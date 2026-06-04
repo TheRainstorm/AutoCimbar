@@ -3,11 +3,7 @@ package app
 import (
 	"fmt"
 	"image"
-	"image/png"
-	"net/http"
 	"os"
-	"os/exec"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -46,9 +42,6 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 	if cfg.FPS <= 0 {
 		cfg.FPS = 30
 	}
-	if cfg.Addr == "" {
-		cfg.Addr = "127.0.0.1:8080"
-	}
 	if err := validateGridScale(cfg.GridSize, cfg.Scale); err != nil {
 		return nil, err
 	}
@@ -86,7 +79,7 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 		return nil, err
 	}
 
-	player := &screenFrameServer{
+	source := &screenFrameSource{
 		codecEnc:    codecEnc,
 		fountainEnc: fountainEnc,
 		fileSize:    len(data),
@@ -105,16 +98,7 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 		BlockSize:       fountainEnc.BlockSize(),
 		BlockCount:      fountainEnc.BlockCount(),
 	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", player.pageHandler(cfg.FPS, rect))
-	mux.HandleFunc("/frame.png", player.frameHandler)
-	if cfg.Open {
-		go func() {
-			time.Sleep(300 * time.Millisecond)
-			_ = openBrowser("http://" + cfg.Addr + "/")
-		}()
-	}
-	if err := http.ListenAndServe(cfg.Addr, mux); err != nil {
+	if err := runScreenEncoderBackend(cfg, source, rect); err != nil {
 		return result, err
 	}
 	return result, nil
@@ -204,7 +188,7 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 	return fmt.Errorf("timeout waiting for enough frames: rank %d of %d", rank, blockCount)
 }
 
-type screenFrameServer struct {
+type screenFrameSource struct {
 	codecEnc    *codec.Encoder
 	fountainEnc *fountain.Encoder
 	fileSize    int
@@ -214,7 +198,7 @@ type screenFrameServer struct {
 	mu          sync.Mutex
 }
 
-func (s *screenFrameServer) frameHandler(w http.ResponseWriter, _ *http.Request) {
+func (s *screenFrameSource) NextImage() (*image.RGBA, error) {
 	s.mu.Lock()
 	block := s.fountainEnc.Encode(s.frameID)
 	s.frameID++
@@ -223,53 +207,9 @@ func (s *screenFrameServer) frameHandler(w http.ResponseWriter, _ *http.Request)
 	packet := BuildPacket(s.fileSize, block.FrameID, block.Data)
 	img, err := s.codecEnc.Encode(packet)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return nil, err
 	}
-	w.Header().Set("Content-Type", "image/png")
-	_ = png.Encode(w, img)
-}
-
-func (s *screenFrameServer) pageHandler(fps int, rect image.Rectangle) http.HandlerFunc {
-	intervalMS := 1000 / fps
-	if intervalMS <= 0 {
-		intervalMS = 1
-	}
-	return func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = fmt.Fprintf(w, `<!doctype html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>AutoCamBar Encoder</title>
-<style>
-html,body{margin:0;padding:0;background:#000;overflow:hidden;width:100%%;height:100%%}
-#frame{display:block;width:%dpx;height:%dpx;image-rendering:pixelated}
-</style>
-</head>
-<body>
-<img id="frame" alt="">
-<script>
-const interval = %d;
-let seq = 0;
-try {
-  window.resizeTo(%d, %d);
-  window.moveTo(%d, %d);
-} catch (_) {}
-function next() {
-  const img = new Image();
-  img.onload = () => {
-    document.getElementById("frame").src = img.src;
-    setTimeout(next, interval);
-  };
-  img.onerror = () => setTimeout(next, interval);
-  img.src = "/frame.png?seq=" + (seq++);
-}
-next();
-</script>
-</body>
-</html>`, s.width, s.height, intervalMS, rect.Dx(), rect.Dy(), rect.Min.X, rect.Min.Y)
-	}
+	return img, nil
 }
 
 func ResolveEncoderRegion(region string, width int, height int) (image.Rectangle, error) {
@@ -349,17 +289,4 @@ func validateGridScale(gridSize int, scale int) error {
 		return fmt.Errorf("B must be > 0")
 	}
 	return nil
-}
-
-func openBrowser(url string) error {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
-	case "darwin":
-		cmd = exec.Command("open", url)
-	default:
-		cmd = exec.Command("xdg-open", url)
-	}
-	return cmd.Start()
 }

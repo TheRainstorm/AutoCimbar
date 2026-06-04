@@ -1,8 +1,6 @@
 package app
 
 import (
-	"image/png"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/autocambar/autocambar/pkg/codec"
@@ -38,7 +36,7 @@ func TestResolveAxis(t *testing.T) {
 	}
 }
 
-func TestScreenFrameHandlerReturnsDecodableFrame(t *testing.T) {
+func TestScreenFrameSourceReturnsDecodableFrame(t *testing.T) {
 	symRec, err := LoadLibcimbarSymbols(testSymbolDir(t))
 	if err != nil {
 		t.Fatalf("LoadLibcimbarSymbols failed: %v", err)
@@ -51,7 +49,7 @@ func TestScreenFrameHandlerReturnsDecodableFrame(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEncoder failed: %v", err)
 	}
-	server := &screenFrameServer{
+	source := &screenFrameSource{
 		codecEnc:    codec.NewEncoder(symRec, colorpkg.NewRecognizer4Color(), CellSize(scale), gridSize),
 		fountainEnc: fountainEnc,
 		fileSize:    len([]byte("screen frame test")),
@@ -59,15 +57,9 @@ func TestScreenFrameHandlerReturnsDecodableFrame(t *testing.T) {
 		height:      gridSize * CellSize(scale),
 	}
 
-	resp := httptest.NewRecorder()
-	server.frameHandler(resp, httptest.NewRequest("GET", "/frame.png", nil))
-	if resp.Code != 200 {
-		t.Fatalf("frameHandler status = %d, body %q", resp.Code, resp.Body.String())
-	}
-
-	img, err := png.Decode(resp.Body)
+	img, err := source.NextImage()
 	if err != nil {
-		t.Fatalf("decode response png: %v", err)
+		t.Fatalf("NextImage failed: %v", err)
 	}
 	packet, err := codec.NewDecoder(symRec, colorpkg.NewRecognizer4Color(), CellSize(scale), gridSize).Decode(img)
 	if err != nil {
