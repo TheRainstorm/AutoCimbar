@@ -26,7 +26,7 @@ func TestPNGFrameFountainRoundTrip(t *testing.T) {
 		t.Fatalf("block count = %d, want 5", result.BlockCount)
 	}
 
-	if err := DecodePNGFramesToFile(frameDir, outputPath, 50, 1, testSymbolDir(t), len(input), 0); err != nil {
+	if err := DecodePNGFramesToFile(frameDir, outputPath, 50, 1, testSymbolDir(t), 0); err != nil {
 		t.Fatalf("DecodePNGFramesToFile failed: %v", err)
 	}
 
@@ -64,7 +64,7 @@ func TestPNGFrameFountainRecoversDroppedFrames(t *testing.T) {
 		}
 	}
 
-	if err := DecodePNGFramesToFile(frameDir, outputPath, 50, 1, testSymbolDir(t), len(input), 0); err != nil {
+	if err := DecodePNGFramesToFile(frameDir, outputPath, 50, 1, testSymbolDir(t), 0); err != nil {
 		t.Fatalf("DecodePNGFramesToFile failed: %v", err)
 	}
 

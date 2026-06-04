@@ -36,7 +36,6 @@ type ScreenDecodeConfig struct {
 	GridSize   int
 	Scale      int
 	SymbolDir  string
-	FileSize   int
 	BlockSize  int
 	Region     string
 	FPS        int
@@ -56,7 +55,7 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 
 	payloadCapacity := PayloadCapacityBytes(cfg.GridSize)
 	if payloadCapacity <= 0 {
-		return nil, fmt.Errorf("grid Q=%d capacity is too small: frame capacity %d, frame id %d", cfg.GridSize, GridCapacityBytes(cfg.GridSize), FrameIDSize)
+		return nil, fmt.Errorf("grid Q=%d capacity is too small: frame capacity %d, frame header %d", cfg.GridSize, GridCapacityBytes(cfg.GridSize), FrameHeaderSize)
 	}
 	blockSize := cfg.BlockSize
 	if blockSize == 0 {
@@ -90,6 +89,7 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 	player := &screenFrameServer{
 		codecEnc:    codecEnc,
 		fountainEnc: fountainEnc,
+		fileSize:    len(data),
 		width:       imageSize,
 		height:      imageSize,
 	}
@@ -130,9 +130,6 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 	if err := validateGridScale(cfg.GridSize, cfg.Scale); err != nil {
 		return err
 	}
-	if cfg.FileSize < 0 {
-		return fmt.Errorf("file size must be >= 0")
-	}
 
 	payloadCapacity := PayloadCapacityBytes(cfg.GridSize)
 	blockSize := cfg.BlockSize
@@ -142,20 +139,15 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 	if blockSize <= 0 || blockSize > payloadCapacity {
 		return fmt.Errorf("block size %d exceeds frame payload capacity %d", blockSize, payloadCapacity)
 	}
-	blockCount := (cfg.FileSize + blockSize - 1) / blockSize
-	if blockCount == 0 {
-		blockCount = 1
-	}
 
 	symRec, err := LoadLibcimbarSymbols(cfg.SymbolDir)
 	if err != nil {
 		return err
 	}
 	codecDec := codec.NewDecoder(symRec, colorpkg.NewRecognizer4Color(), CellSize(cfg.Scale), cfg.GridSize)
-	fountainDec, err := fountain.NewDecoder(cfg.FileSize, blockSize, blockCount)
-	if err != nil {
-		return err
-	}
+	var fountainDec *fountain.Decoder
+	blockCount := 0
+	fileSize := -1
 
 	imageSize := cfg.GridSize * CellSize(cfg.Scale)
 	rect, err := ResolveDecoderRegion(cfg.Region, imageSize, imageSize)
@@ -182,6 +174,16 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 		if err != nil {
 			return fmt.Errorf("parse captured frame: %w", err)
 		}
+		if fountainDec == nil {
+			fileSize = frame.FileSize
+			blockCount = blockCountForFile(fileSize, blockSize)
+			fountainDec, err = fountain.NewDecoder(fileSize, blockSize, blockCount)
+			if err != nil {
+				return err
+			}
+		} else if frame.FileSize != fileSize {
+			return fmt.Errorf("captured frame belongs to a different file size: got %d, want %d", frame.FileSize, fileSize)
+		}
 		if _, err := fountainDec.AddFrame(frame.FrameID, frame.Payload); err != nil {
 			return fmt.Errorf("add captured frame: %w", err)
 		}
@@ -195,12 +197,17 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 		time.Sleep(interval)
 	}
 
-	return fmt.Errorf("timeout waiting for enough frames: rank %d of %d", fountainDec.Rank(), blockCount)
+	rank := 0
+	if fountainDec != nil {
+		rank = fountainDec.Rank()
+	}
+	return fmt.Errorf("timeout waiting for enough frames: rank %d of %d", rank, blockCount)
 }
 
 type screenFrameServer struct {
 	codecEnc    *codec.Encoder
 	fountainEnc *fountain.Encoder
+	fileSize    int
 	frameID     uint32
 	width       int
 	height      int
@@ -213,7 +220,7 @@ func (s *screenFrameServer) frameHandler(w http.ResponseWriter, _ *http.Request)
 	s.frameID++
 	s.mu.Unlock()
 
-	packet := BuildPacket(block.FrameID, block.Data)
+	packet := BuildPacket(s.fileSize, block.FrameID, block.Data)
 	img, err := s.codecEnc.Encode(packet)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

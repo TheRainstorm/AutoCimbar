@@ -40,7 +40,7 @@ func EncodeFileToPNGFrames(inputPath string, outputDir string, gridSize int, sca
 
 	payloadCapacity := PayloadCapacityBytes(gridSize)
 	if payloadCapacity <= 0 {
-		return nil, fmt.Errorf("grid Q=%d capacity is too small: frame capacity %d, frame id %d", gridSize, GridCapacityBytes(gridSize), FrameIDSize)
+		return nil, fmt.Errorf("grid Q=%d capacity is too small: frame capacity %d, frame header %d", gridSize, GridCapacityBytes(gridSize), FrameHeaderSize)
 	}
 	if blockSize == 0 {
 		blockSize = payloadCapacity
@@ -83,7 +83,7 @@ func EncodeFileToPNGFrames(inputPath string, outputDir string, gridSize int, sca
 	paths := make([]string, 0, totalFrames)
 	for i := 0; i < totalFrames; i++ {
 		block := fountainEnc.Encode(uint32(i))
-		packet := BuildPacket(block.FrameID, block.Data)
+		packet := BuildPacket(len(data), block.FrameID, block.Data)
 		img, err := enc.Encode(packet)
 		if err != nil {
 			return nil, fmt.Errorf("encode frame %d: %w", i, err)
@@ -120,15 +120,12 @@ func EncodeFileToPNGFrames(inputPath string, outputDir string, gridSize int, sca
 	}, nil
 }
 
-func DecodePNGFramesToFile(inputPath string, outputPath string, gridSize int, scale int, symbolDir string, fileSize int, blockSize int) error {
+func DecodePNGFramesToFile(inputPath string, outputPath string, gridSize int, scale int, symbolDir string, blockSize int) error {
 	if gridSize <= 0 {
 		return fmt.Errorf("Q must be > 0")
 	}
 	if scale <= 0 {
 		return fmt.Errorf("B must be > 0")
-	}
-	if fileSize < 0 {
-		return fmt.Errorf("file size must be >= 0")
 	}
 
 	paths, err := collectPNGPaths(inputPath)
@@ -140,7 +137,7 @@ func DecodePNGFramesToFile(inputPath string, outputPath string, gridSize int, sc
 	}
 	payloadCapacity := PayloadCapacityBytes(gridSize)
 	if payloadCapacity <= 0 {
-		return fmt.Errorf("grid Q=%d capacity is too small: frame capacity %d, frame id %d", gridSize, GridCapacityBytes(gridSize), FrameIDSize)
+		return fmt.Errorf("grid Q=%d capacity is too small: frame capacity %d, frame header %d", gridSize, GridCapacityBytes(gridSize), FrameHeaderSize)
 	}
 	if blockSize == 0 {
 		blockSize = payloadCapacity
@@ -151,24 +148,28 @@ func DecodePNGFramesToFile(inputPath string, outputPath string, gridSize int, sc
 	if blockSize > payloadCapacity {
 		return fmt.Errorf("block size %d exceeds frame payload capacity %d", blockSize, payloadCapacity)
 	}
-	blockCount := (fileSize + blockSize - 1) / blockSize
-	if blockCount == 0 {
-		blockCount = 1
-	}
-
 	symRec, err := LoadLibcimbarSymbols(symbolDir)
 	if err != nil {
 		return err
 	}
 	codecDec := codec.NewDecoder(symRec, colorpkg.NewRecognizer4Color(), CellSize(scale), gridSize)
-	fountainDec, err := fountain.NewDecoder(fileSize, blockSize, blockCount)
-	if err != nil {
-		return err
-	}
+	var fountainDec *fountain.Decoder
+	blockCount := 0
+	fileSize := -1
 	for _, path := range paths {
 		frame, err := decodeFrameFile(codecDec, path, blockSize)
 		if err != nil {
 			return err
+		}
+		if fountainDec == nil {
+			fileSize = frame.FileSize
+			blockCount = blockCountForFile(fileSize, blockSize)
+			fountainDec, err = fountain.NewDecoder(fileSize, blockSize, blockCount)
+			if err != nil {
+				return err
+			}
+		} else if frame.FileSize != fileSize {
+			return fmt.Errorf("frame %s belongs to a different file size: got %d, want %d", path, frame.FileSize, fileSize)
 		}
 		if _, err := fountainDec.AddFrame(frame.FrameID, frame.Payload); err != nil {
 			return fmt.Errorf("add frame %s: %w", path, err)
@@ -178,6 +179,9 @@ func DecodePNGFramesToFile(inputPath string, outputPath string, gridSize int, sc
 		}
 	}
 
+	if fountainDec == nil {
+		return fmt.Errorf("no decodable frames found")
+	}
 	if !fountainDec.Complete() {
 		return fmt.Errorf("not enough independent frames: rank %d of %d", fountainDec.Rank(), blockCount)
 	}

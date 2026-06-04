@@ -5,11 +5,12 @@ import (
 	"fmt"
 )
 
-const FrameIDSize = 4
+const FrameHeaderSize = 12
 
 type Frame struct {
-	FrameID uint32
-	Payload []byte
+	FileSize int
+	FrameID  uint32
+	Payload  []byte
 }
 
 func GridCapacityBytes(gridSize int) int {
@@ -20,29 +21,44 @@ func GridCapacityBytes(gridSize int) int {
 }
 
 func PayloadCapacityBytes(gridSize int) int {
-	return GridCapacityBytes(gridSize) - FrameIDSize
+	return GridCapacityBytes(gridSize) - FrameHeaderSize
 }
 
 func CellSize(scale int) int {
 	return 8 * scale
 }
 
-func BuildPacket(frameID uint32, payload []byte) []byte {
-	packet := make([]byte, FrameIDSize+len(payload))
-	binary.BigEndian.PutUint32(packet[:FrameIDSize], frameID)
-	copy(packet[FrameIDSize:], payload)
+func blockCountForFile(fileSize int, blockSize int) int {
+	blockCount := (fileSize + blockSize - 1) / blockSize
+	if blockCount == 0 {
+		blockCount = 1
+	}
+	return blockCount
+}
+
+func BuildPacket(fileSize int, frameID uint32, payload []byte) []byte {
+	packet := make([]byte, FrameHeaderSize+len(payload))
+	binary.BigEndian.PutUint64(packet[0:8], uint64(fileSize))
+	binary.BigEndian.PutUint32(packet[8:12], frameID)
+	copy(packet[FrameHeaderSize:], payload)
 	return packet
 }
 
 func ParsePacket(data []byte, blockSize int) (*Frame, error) {
-	if len(data) < FrameIDSize+blockSize {
-		return nil, fmt.Errorf("packet too short: got %d, need %d", len(data), FrameIDSize+blockSize)
+	if len(data) < FrameHeaderSize+blockSize {
+		return nil, fmt.Errorf("packet too short: got %d, need %d", len(data), FrameHeaderSize+blockSize)
+	}
+
+	fileSize := binary.BigEndian.Uint64(data[0:8])
+	if fileSize > uint64(^uint(0)>>1) {
+		return nil, fmt.Errorf("file size too large: %d", fileSize)
 	}
 
 	payload := make([]byte, blockSize)
-	copy(payload, data[FrameIDSize:FrameIDSize+blockSize])
+	copy(payload, data[FrameHeaderSize:FrameHeaderSize+blockSize])
 	return &Frame{
-		FrameID: binary.BigEndian.Uint32(data[:FrameIDSize]),
-		Payload: payload,
+		FileSize: int(fileSize),
+		FrameID:  binary.BigEndian.Uint32(data[8:12]),
+		Payload:  payload,
 	}, nil
 }

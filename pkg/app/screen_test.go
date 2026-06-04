@@ -54,6 +54,7 @@ func TestScreenFrameHandlerReturnsDecodableFrame(t *testing.T) {
 	server := &screenFrameServer{
 		codecEnc:    codec.NewEncoder(symRec, colorpkg.NewRecognizer4Color(), CellSize(scale), gridSize),
 		fountainEnc: fountainEnc,
+		fileSize:    len([]byte("screen frame test")),
 		width:       gridSize * CellSize(scale),
 		height:      gridSize * CellSize(scale),
 	}
@@ -75,6 +76,9 @@ func TestScreenFrameHandlerReturnsDecodableFrame(t *testing.T) {
 	frame, err := ParsePacket(packet, blockSize)
 	if err != nil {
 		t.Fatalf("ParsePacket failed: %v", err)
+	}
+	if frame.FileSize != len([]byte("screen frame test")) {
+		t.Fatalf("FileSize = %d", frame.FileSize)
 	}
 	if frame.FrameID != 0 {
 		t.Fatalf("FrameID = %d, want 0", frame.FrameID)
