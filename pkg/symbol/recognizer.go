@@ -57,6 +57,11 @@ func (r *Recognizer) Recognize(cellImg image.Image) (SymbolID, int) {
 	// 计算 image hash
 	hash := ImageHash(tile)
 
+	return r.RecognizeHash(hash)
+}
+
+// RecognizeHash 根据已计算好的 8x8 image hash 识别符号。
+func (r *Recognizer) RecognizeHash(hash uint64) (SymbolID, int) {
 	// 与 16 个参考符号比较汉明距离
 	minDist := 65 // 最大汉明距离是 64
 	bestID := SymbolID(0)
@@ -128,10 +133,10 @@ func (r *Recognizer) IsLoaded() bool {
 
 // Stats 返回识别器统计信息
 type Stats struct {
-	LoadedSymbols   int
-	MinHammingDist  int
-	AvgHammingDist  float64
-	ClosestPairs    [][2]SymbolID
+	LoadedSymbols  int
+	MinHammingDist int
+	AvgHammingDist float64
+	ClosestPairs   [][2]SymbolID
 }
 
 // GetStats 获取识别器统计信息

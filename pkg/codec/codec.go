@@ -218,16 +218,21 @@ func (d *Decoder) extractCells(img image.Image) ([]Cell, error) {
 	numCells := d.gridSize * d.gridSize
 	cells := make([]Cell, numCells)
 
+	bounds := img.Bounds()
+	requiredW := d.gridSize * d.cellSize
+	requiredH := d.gridSize * d.cellSize
+	if bounds.Dx() < requiredW || bounds.Dy() < requiredH {
+		return nil, fmt.Errorf("image too small: got %dx%d, need at least %dx%d", bounds.Dx(), bounds.Dy(), requiredW, requiredH)
+	}
+
 	for i := 0; i < numCells; i++ {
 		x := (i % d.gridSize) * d.cellSize
 		y := (i / d.gridSize) * d.cellSize
 
-		// 提取 cell 子图像
-		cellImg := extractSubImage(img, x, y, d.cellSize, d.cellSize)
-
-		// 先识别形状，再只从形状前景像素采样颜色，避免黑色背景稀释颜色。
-		shapeID, _ := d.symbolRecognizer.Recognize(cellImg)
-		colorID := d.recognizeCellColor(cellImg, shapeID)
+		// 直接从原图采样 8x8 hash，避免为每个 cell 分配子图。
+		hash := d.cellHash(img, bounds.Min.X+x, bounds.Min.Y+y)
+		shapeID, _ := d.symbolRecognizer.RecognizeHash(hash)
+		colorID := d.recognizeCellColorAt(img, bounds.Min.X+x, bounds.Min.Y+y, shapeID)
 
 		cells[i] = Cell{
 			Color: colorID,
@@ -236,6 +241,32 @@ func (d *Decoder) extractCells(img image.Image) ([]Cell, error) {
 	}
 
 	return cells, nil
+}
+
+func (d *Decoder) cellHash(img image.Image, x, y int) uint64 {
+	var samples [64]uint8
+	var sum uint64
+
+	for ty := 0; ty < 8; ty++ {
+		for tx := 0; tx < 8; tx++ {
+			sx := x + tx*d.cellSize/8
+			sy := y + ty*d.cellSize/8
+			gray := fastGrayAt(img, sx, sy)
+			samples[ty*8+tx] = gray
+			sum += uint64(gray)
+		}
+	}
+
+	threshold := uint8(sum / 64)
+	var hash uint64
+	for _, gray := range samples {
+		bit := uint64(0)
+		if gray > threshold {
+			bit = 1
+		}
+		hash = (hash << 1) | bit
+	}
+	return hash
 }
 
 func (d *Decoder) recognizeCellColor(cellImg image.Image, shapeID symbol.SymbolID) colorpkg.ColorID {
@@ -267,6 +298,47 @@ func (d *Decoder) recognizeCellColor(cellImg image.Image, shapeID symbol.SymbolI
 
 	if count == 0 {
 		colorID, _ := d.colorRecognizer.Recognize(cellImg)
+		return colorID
+	}
+
+	avg := color.RGBA{
+		R: uint8(sumR / uint64(count)),
+		G: uint8(sumG / uint64(count)),
+		B: uint8(sumB / uint64(count)),
+		A: 255,
+	}
+	colorID, _ := d.colorRecognizer.RecognizeColor(avg)
+	return colorID
+}
+
+func (d *Decoder) recognizeCellColorAt(img image.Image, x, y int, shapeID symbol.SymbolID) colorpkg.ColorID {
+	template, err := d.symbolRecognizer.GetTemplate(shapeID)
+	if err != nil {
+		colorID, _ := d.colorRecognizer.Recognize(extractSubImage(img, x, y, d.cellSize, d.cellSize))
+		return colorID
+	}
+
+	var sumR, sumG, sumB uint64
+	count := 0
+
+	for dy := 0; dy < d.cellSize; dy++ {
+		for dx := 0; dx < d.cellSize; dx++ {
+			tx := dx * 8 / d.cellSize
+			ty := dy * 8 / d.cellSize
+			if !d.templateForeground(shapeID, template, tx, ty) {
+				continue
+			}
+
+			r, g, b := fastRGBAt(img, x+dx, y+dy)
+			sumR += uint64(r)
+			sumG += uint64(g)
+			sumB += uint64(b)
+			count++
+		}
+	}
+
+	if count == 0 {
+		colorID, _ := d.colorRecognizer.Recognize(extractSubImage(img, x, y, d.cellSize, d.cellSize))
 		return colorID
 	}
 
@@ -334,6 +406,32 @@ func templateAverageGray(template *image.Gray) uint8 {
 		return 128
 	}
 	return uint8(sum / uint64(count))
+}
+
+func fastGrayAt(img image.Image, x, y int) uint8 {
+	r, g, b := fastRGBAt(img, x, y)
+	return uint8((299*uint32(r) + 587*uint32(g) + 114*uint32(b)) / 1000)
+}
+
+func fastRGBAt(img image.Image, x, y int) (uint8, uint8, uint8) {
+	switch src := img.(type) {
+	case *image.RGBA:
+		c := src.RGBAAt(x, y)
+		return c.R, c.G, c.B
+	case *image.NRGBA:
+		c := src.NRGBAAt(x, y)
+		if c.A == 255 {
+			return c.R, c.G, c.B
+		}
+		if c.A == 0 {
+			return 0, 0, 0
+		}
+		a := uint32(c.A)
+		return uint8(uint32(c.R) * a / 255), uint8(uint32(c.G) * a / 255), uint8(uint32(c.B) * a / 255)
+	default:
+		r, g, b, _ := img.At(x, y).RGBA()
+		return uint8(r >> 8), uint8(g >> 8), uint8(b >> 8)
+	}
 }
 
 // cellsToBytes 将 cells 转换为字节数组
