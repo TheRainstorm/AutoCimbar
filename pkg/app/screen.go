@@ -157,6 +157,11 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 	if err != nil {
 		return err
 	}
+	capturer, err := newScreenCapturer(rect)
+	if err != nil {
+		return err
+	}
+	defer capturer.Close()
 
 	deadline := time.Now().Add(cfg.Timeout)
 	interval := time.Second / time.Duration(cfg.FPS)
@@ -167,7 +172,7 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 	defer progress.finishLine()
 
 	for time.Now().Before(deadline) {
-		img, err := screenshot.CaptureRect(rect)
+		img, err := capturer.Capture()
 		if err != nil {
 			return fmt.Errorf("capture screen: %w", err)
 		}
