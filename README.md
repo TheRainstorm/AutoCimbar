@@ -6,7 +6,7 @@ AutoCamBar 是一个面向远程桌面截屏场景的文件传输工具。发送
 
 - 4 色 × 16 符号，每个 cell 编码 6 bits
 - 默认内置 16 个 libcimbar bitmap 符号，Windows 上单个 exe 可直接运行
-- 原始文件传输前使用 zstd 压缩，恢复时流式解压并校验 MD5
+- 原始文件传输前默认使用 zstd 压缩，恢复时流式解压并校验 MD5；可用 `-no-zstd` 关闭
 - 纯 Go 线性喷泉码，支持冗余帧和丢帧恢复
 - PNG 帧模式：便于测试和离线验证
 - 屏幕模式：Windows 下 encoder 直接打开原生无边框置顶窗口，decoder 截图指定区域恢复文件
@@ -59,7 +59,7 @@ PNG 帧模式不需要真实屏幕，适合先确认程序能完整恢复文件�
 发送端生成帧：
 
 ```bash
-./bin/encoder -i input.bin -o frames -redundancy 100
+./bin/encoder -i input.bin -o frames
 ```
 
 接收端恢复文件：
@@ -71,14 +71,14 @@ PNG 帧模式不需要真实屏幕，适合先确认程序能完整恢复文件�
 Windows PowerShell：
 
 ```powershell
-.\bin\encoder.exe -i input.bin -o frames -redundancy 100
+.\bin\encoder.exe -i input.bin -o frames
 .\bin\decoder.exe -i frames -o output.bin
 ```
 
 启用单帧 ECC 时，encoder 和 decoder 必须使用相同 `-ecc`：
 
 ```bash
-./bin/encoder -i input.bin -o frames -Q 80 -B 1 -redundancy 100 -ecc 20
+./bin/encoder -i input.bin -o frames -Q 80 -B 1 -ecc 20
 ./bin/decoder -i frames -o output.bin -Q 80 -B 1 -ecc 20
 ```
 
@@ -119,7 +119,7 @@ decoder 也会在喷泉码恢复完成后校验内置的文件级 MD5；校验�
 - `-R X:Y` 或 `-R SCREEN:X:Y`：播放窗口位置；省略 `SCREEN` 时默认主屏 0
 - 负数从该屏幕右/下边缘定位；`0:-0:-0` 表示主屏右下角贴边
 - `-fps`：窗口刷新帧率
-- `-block-size`：可选，喷泉码 block 大小；默认使用当前 `Q` 可承载的最大 payload
+- `-no-zstd`：关闭默认 zstd 压缩，直接传输原始文件数据
 
 按 `Esc` 可以关闭发送窗口。非 Windows 平台当前仍使用 HTTP/浏览器 fallback。
 
@@ -151,7 +151,7 @@ decoder 也会在喷泉码恢复完成后校验内置的文件级 MD5；校验�
 - `-R 0:-0:-0`：主屏右下角
 - `-R 1:100:200`：第 2 块屏幕，偏移 `(100, 200)`
 
-两端必须使用一致的 `Q`、`B` 和 `block-size`。文件大小会在当前线性喷泉码帧头中发送，decoder 不需要手动指定。
+两端必须使用一致的 `Q`、`B` 和 `-ecc`。文件大小会在当前线性喷泉码帧头中发送，decoder 不需要手动指定。
 
 ## 参数参考
 
@@ -162,9 +162,8 @@ decoder 也会在喷泉码恢复完成后校验内置的文件级 MD5；校验�
 -o             PNG 帧输出目录，默认 frames
 -Q             grid cell 数，默认 120
 -B             cell 缩放倍数，实际 cell 像素为 8 * B
--redundancy    PNG 模式额外冗余帧百分比，默认 10
--block-size    喷泉码 block 大小，0 表示使用最大 payload
 -ecc           单帧 Reed-Solomon ECC 百分比，默认 3；必须与 decoder 一致
+-no-zstd       关闭默认 zstd 压缩
 -screen        启用屏幕播放模式
 -R             屏幕播放位置，格式 X:Y 或 SCREEN:X:Y
 -fps           屏幕播放帧率，默认 60
@@ -182,7 +181,6 @@ decoder 也会在喷泉码恢复完成后校验内置的文件级 MD5；校验�
 -o             输出文件，默认 decoded.out
 -Q             grid cell 数，默认 120；必须与 encoder 一致
 -B             cell 缩放倍数，必须与 encoder 一致
--block-size    喷泉码 block 大小，必须与 encoder 一致
 -ecc           单帧 Reed-Solomon ECC 百分比，默认 3；必须与 encoder 一致
 -screen        启用截图解码模式
 -R             截图区域，格式 SCREEN:X:Y
@@ -215,7 +213,7 @@ go test ./...
 
 - 当前喷泉码是纯 Go 线性 XOR 喷泉码，decoder 需要知道源块数量；实现方式是在每帧头携带文件大小，用于推导 `blockCount`。
 - 每帧头当前包含 `fileSize(8 bytes) + frameID(4 bytes)`，其余为喷泉编码块；`fileSize` 指喷泉传输数据大小。
-- 原始文件会先进行 zstd 压缩，再加一个一次性源数据头，包含原始文件大小、压缩方式和 MD5，用于最终完整性校验；它不是每帧参数。
+- 原始文件默认会先进行 zstd 压缩，再加一个一次性源数据头，包含原始文件大小、压缩方式和 MD5，用于最终完整性校验；它不是每帧参数。使用 `-no-zstd` 时源数据头会标记为未压缩。
 - `-ecc` 是运行时约定参数，不写入帧头；开启后会减少每帧 fountain payload，并在单帧内添加交织后的 RS 校验字节。
 - Windows 屏幕模式使用 Win32 原生窗口；非 Windows 平台暂时使用 HTTP/浏览器 fallback。
 - 暂未实现 GPU 加速和真正的 Wirehair/Raptor 类喷泉码。

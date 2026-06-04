@@ -75,6 +75,26 @@ func TestBuildParseSourceDataRoundTrip(t *testing.T) {
 	}
 }
 
+func TestBuildParseSourceDataRoundTripWithoutCompression(t *testing.T) {
+	input := []byte("plain source payload")
+	source, err := ParseSourceData(BuildSourceDataWithCompression(input, false))
+	if err != nil {
+		t.Fatalf("ParseSourceData failed: %v", err)
+	}
+	if source.FileSize != len(input) {
+		t.Fatalf("FileSize = %d, want %d", source.FileSize, len(input))
+	}
+	if source.MD5 != BytesMD5Hex(input) {
+		t.Fatalf("MD5 = %s, want %s", source.MD5, BytesMD5Hex(input))
+	}
+	if source.Compression != SourceCompressionNone {
+		t.Fatalf("Compression = %d, want %d", source.Compression, SourceCompressionNone)
+	}
+	if !bytes.Equal(source.Payload, input) {
+		t.Fatal("payload differs from input")
+	}
+}
+
 func TestParseSourceDataRejectsMD5Mismatch(t *testing.T) {
 	sourceData := BuildSourceData([]byte("source payload"))
 	sourceData[len(sourceData)-1] ^= 0x01
@@ -93,6 +113,29 @@ func TestWriteSourceDataToFileRoundTrip(t *testing.T) {
 	source, err := WriteSourceDataToFile(BuildSourceData(input), outputPath)
 	if err != nil {
 		t.Fatalf("WriteSourceDataToFile failed: %v", err)
+	}
+	if source.MD5 != BytesMD5Hex(input) {
+		t.Fatalf("MD5 = %s, want %s", source.MD5, BytesMD5Hex(input))
+	}
+	output, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	if !bytes.Equal(output, input) {
+		t.Fatal("output differs from input")
+	}
+}
+
+func TestWriteSourceDataToFileRoundTripWithoutCompression(t *testing.T) {
+	input := bytes.Repeat([]byte("plain payload "), 128)
+	outputPath := filepath.Join(t.TempDir(), "output.bin")
+
+	source, err := WriteSourceDataToFile(BuildSourceDataWithCompression(input, false), outputPath)
+	if err != nil {
+		t.Fatalf("WriteSourceDataToFile failed: %v", err)
+	}
+	if source.Compression != SourceCompressionNone {
+		t.Fatalf("Compression = %d, want %d", source.Compression, SourceCompressionNone)
 	}
 	if source.MD5 != BytesMD5Hex(input) {
 		t.Fatalf("MD5 = %s, want %s", source.MD5, BytesMD5Hex(input))

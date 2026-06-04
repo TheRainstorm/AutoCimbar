@@ -98,6 +98,29 @@ func (c *screenCapturer) DecodeInto(dec *codec.Decoder, dst []byte) ([]byte, err
 	return dec.DecodeBGRAInto(pix, c.width, c.height, stride, dst)
 }
 
+func (c *screenCapturer) CaptureFrame(dst []byte) (*capturedScreenFrame, error) {
+	if !win.BitBlt(c.memoryDevice, 0, 0, int32(c.width), int32(c.height), c.hdc, int32(c.rect.Min.X), int32(c.rect.Min.Y), win.SRCCOPY) {
+		return nil, fmt.Errorf("%w: BitBlt failed", ErrScreenCapture)
+	}
+
+	stride := c.width * 4
+	need := stride * c.height
+	if cap(dst) < need {
+		dst = make([]byte, need)
+	} else {
+		dst = dst[:need]
+	}
+	pix := unsafe.Slice((*byte)(c.memptr), need)
+	copy(dst, pix)
+	return &capturedScreenFrame{
+		Pix:    dst,
+		Width:  c.width,
+		Height: c.height,
+		Stride: stride,
+		BGRA:   true,
+	}, nil
+}
+
 func (c *screenCapturer) Close() error {
 	if c.memoryDevice != 0 && c.oldObject != 0 {
 		win.SelectObject(c.memoryDevice, c.oldObject)

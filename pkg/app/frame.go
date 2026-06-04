@@ -13,6 +13,7 @@ const (
 	FrameHeaderSize       = 16
 	SourceMagic           = uint32(0x41435331) // "ACS1"
 	SourceHeaderSize      = 32
+	SourceCompressionNone = uint32(0)
 	SourceCompressionZstd = uint32(1)
 )
 

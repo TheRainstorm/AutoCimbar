@@ -31,9 +31,14 @@ type EncodeResult struct {
 	BlockSize       int
 	BlockCount      int
 	MD5             string
+	Compression     uint32
 }
 
 func EncodeFileToPNGFrames(inputPath string, outputDir string, gridSize int, scale int, symbolDir string, redundancyPercent int, blockSize int, eccPercent int) (*EncodeResult, error) {
+	return EncodeFileToPNGFramesWithOptions(inputPath, outputDir, gridSize, scale, symbolDir, redundancyPercent, blockSize, eccPercent, true)
+}
+
+func EncodeFileToPNGFramesWithOptions(inputPath string, outputDir string, gridSize int, scale int, symbolDir string, redundancyPercent int, blockSize int, eccPercent int, compress bool) (*EncodeResult, error) {
 	if gridSize <= 0 {
 		return nil, fmt.Errorf("Q must be > 0")
 	}
@@ -62,7 +67,7 @@ func EncodeFileToPNGFrames(inputPath string, outputDir string, gridSize int, sca
 		return nil, err
 	}
 
-	sourceData, fileSize, md5Hex, err := BuildSourceDataFromFile(inputPath)
+	sourceData, fileSize, md5Hex, err := BuildSourceDataFromFileWithCompression(inputPath, compress)
 	if err != nil {
 		return nil, err
 	}
@@ -139,6 +144,7 @@ func EncodeFileToPNGFrames(inputPath string, outputDir string, gridSize int, sca
 		BlockSize:       fountainEnc.BlockSize(),
 		BlockCount:      fountainEnc.BlockCount(),
 		MD5:             md5Hex,
+		Compression:     sourceCompression(compress),
 	}, nil
 }
 

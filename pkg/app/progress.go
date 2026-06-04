@@ -14,6 +14,7 @@ type screenEncoderProgress struct {
 	last           time.Time
 	fileSize       int
 	md5            string
+	compression    uint32
 	compressedSize int
 	transferSize   int
 	blockSize      int
@@ -41,6 +42,7 @@ func newScreenEncoderProgress(out io.Writer, result *EncodeResult) *screenEncode
 		last:           now,
 		fileSize:       result.FileSize,
 		md5:            result.MD5,
+		compression:    result.Compression,
 		compressedSize: result.CompressedSize,
 		transferSize:   result.TransferSize,
 		blockSize:      result.BlockSize,
@@ -66,8 +68,8 @@ func (p *screenEncoderProgress) startSummary() {
 	if unusedBytes < 0 {
 		unusedBytes = 0
 	}
-	fmt.Fprintf(p.out, "file=%d bytes compressed=%d bytes transfer=%d bytes md5=%s source_blocks=%d\n",
-		p.fileSize, p.compressedSize, p.transferSize, p.md5, p.blockCount)
+	fmt.Fprintf(p.out, "file=%d bytes source_payload=%d bytes compression=%s transfer=%d bytes md5=%s source_blocks=%d\n",
+		p.fileSize, p.compressedSize, SourceCompressionName(p.compression), p.transferSize, p.md5, p.blockCount)
 	fmt.Fprintf(p.out, "per-frame capacity: codec=%d bytes (%d bits), actual_packet=%d bytes\n", p.frameCapacity, p.frameCapacity*8, packetBytes)
 	fmt.Fprintf(p.out, "  header=%d bytes: magic=ACB1 file_size=8 frame_id=4\n", FrameHeaderSize)
 	fmt.Fprintf(p.out, "  data_area=%d bytes after header\n", p.payloadBytes)
@@ -160,6 +162,7 @@ type screenDecoderProgress struct {
 	lastDecoded       uint64
 	lastValid         uint64
 	lastRecoveredByte int
+	mu                sync.Mutex
 }
 
 func newScreenDecoderProgress(out io.Writer, blockSize int) *screenDecoderProgress {
@@ -180,6 +183,8 @@ func (p *screenDecoderProgress) noteCaptured() {
 	if p == nil {
 		return
 	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.captured++
 	p.render(false)
 }
@@ -188,6 +193,8 @@ func (p *screenDecoderProgress) noteDecoded() {
 	if p == nil {
 		return
 	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.decoded++
 	p.render(false)
 }
@@ -196,6 +203,8 @@ func (p *screenDecoderProgress) noteInvalid() {
 	if p == nil {
 		return
 	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.invalid++
 	p.render(false)
 }
@@ -204,6 +213,8 @@ func (p *screenDecoderProgress) noteStarted(fileSize int, blockCount int) {
 	if p == nil {
 		return
 	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if p.fileSize >= 0 {
 		return
 	}
@@ -216,6 +227,8 @@ func (p *screenDecoderProgress) noteValid(rank int) {
 	if p == nil {
 		return
 	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.valid++
 	p.rank = rank
 	p.render(false)
@@ -225,6 +238,8 @@ func (p *screenDecoderProgress) finishLine() {
 	if p == nil {
 		return
 	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.render(true)
 	fmt.Fprintln(p.out)
 }

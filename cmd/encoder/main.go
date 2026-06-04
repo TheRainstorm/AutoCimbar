@@ -17,6 +17,7 @@ func main() {
 	redundancy := flag.Int("redundancy", 10, "extra fountain frames as a percentage")
 	blockSize := flag.Int("block-size", 0, "fountain block size in bytes, 0 uses max frame payload")
 	eccPercent := flag.Int("ecc", 3, "per-frame Reed-Solomon ECC percentage; decoder must use the same value")
+	noZstd := flag.Bool("no-zstd", false, "disable default zstd source compression")
 	screen := flag.Bool("screen", false, "show frames in a borderless screen window instead of writing PNG files")
 	region := flag.String("R", "0:0", "screen window region X:Y or SCREEN:X:Y, negative values anchor from right/bottom")
 	fps := flag.Int("fps", 60, "screen frame rate")
@@ -51,6 +52,7 @@ func main() {
 			SymbolDir:  *symbolDir,
 			BlockSize:  *blockSize,
 			ECCPercent: *eccPercent,
+			NoZstd:     *noZstd,
 			Region:     *region,
 			FPS:        *fps,
 			Addr:       *addr,
@@ -61,19 +63,19 @@ func main() {
 			fmt.Fprintf(os.Stderr, "screen encoder failed: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Printf("screen encoded %d bytes, compressed=%d bytes, transfer=%d bytes, %d source block(s), block=%d bytes, md5=%s\n",
-			result.FileSize, result.CompressedSize, result.TransferSize, result.BlockCount, result.BlockSize, result.MD5)
+		fmt.Printf("screen encoded %d bytes, source_payload=%d bytes, compression=%s, transfer=%d bytes, %d source block(s), block=%d bytes, md5=%s\n",
+			result.FileSize, result.CompressedSize, app.SourceCompressionName(result.Compression), result.TransferSize, result.BlockCount, result.BlockSize, result.MD5)
 		return
 	}
 
-	result, err := app.EncodeFileToPNGFrames(*input, *outputDir, *q, *b, *symbolDir, *redundancy, *blockSize, *eccPercent)
+	result, err := app.EncodeFileToPNGFramesWithOptions(*input, *outputDir, *q, *b, *symbolDir, *redundancy, *blockSize, *eccPercent, !*noZstd)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "encoder failed: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("encoded %d bytes into %d frame(s), compressed=%d bytes, transfer=%d bytes, %d source block(s), md5=%s\n",
-		result.FileSize, len(result.FramePaths), result.CompressedSize, result.TransferSize, result.BlockCount, result.MD5)
+	fmt.Printf("encoded %d bytes into %d frame(s), source_payload=%d bytes, compression=%s, transfer=%d bytes, %d source block(s), md5=%s\n",
+		result.FileSize, len(result.FramePaths), result.CompressedSize, app.SourceCompressionName(result.Compression), result.TransferSize, result.BlockCount, result.MD5)
 	fmt.Printf("Q=%d B=%d cell=%dpx image=%dx%dpx payload=%d bytes/frame block=%d bytes ecc=%d%% parity=%d bytes packet=%d bytes\n",
 		result.GridSize, result.Scale, result.CellSize, result.ImageSize, result.ImageSize, result.PayloadCapacity, result.BlockSize, result.ECCPercent, result.ECCBytes, result.PacketBytes)
 	fmt.Printf("output: %s\n", *outputDir)

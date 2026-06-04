@@ -30,6 +30,21 @@ func (c *screenCapturer) DecodeInto(dec *codec.Decoder, dst []byte) ([]byte, err
 	return dec.DecodeInto(img, dst)
 }
 
+func (c *screenCapturer) CaptureFrame(dst []byte) (*capturedScreenFrame, error) {
+	img, err := c.Capture()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrScreenCapture, err)
+	}
+	return &capturedScreenFrame{
+		Img:    img,
+		Pix:    img.Pix,
+		Width:  img.Bounds().Dx(),
+		Height: img.Bounds().Dy(),
+		Stride: img.Stride,
+		BGRA:   false,
+	}, nil
+}
+
 func (c *screenCapturer) Close() error {
 	return nil
 }
