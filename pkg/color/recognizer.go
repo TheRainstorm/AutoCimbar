@@ -81,12 +81,18 @@ type Recognizer struct {
 	referenceLAB []LABColor
 	// 原始 RGB 颜色
 	referenceRGB []color.RGBA
+	// 近似视频编码色彩空间，用于解码热路径的快速颜色匹配。
+	referenceYCbCr []YCbCrColor
 }
 
 // LABColor LAB 色彩空间颜色
 // LAB 比 RGB 更接近人眼感知，距离计算更准确
 type LABColor struct {
 	L, A, B float64
+}
+
+type YCbCrColor struct {
+	Y, Cb, Cr int32
 }
 
 func NewRecognizer2Color() *Recognizer {
@@ -109,12 +115,14 @@ func NewRecognizer16Color() *Recognizer {
 func NewRecognizer(palette []color.RGBA) *Recognizer {
 	referenceRGB := append([]color.RGBA(nil), palette...)
 	r := &Recognizer{
-		referenceRGB: referenceRGB,
-		referenceLAB: make([]LABColor, len(referenceRGB)),
+		referenceRGB:   referenceRGB,
+		referenceLAB:   make([]LABColor, len(referenceRGB)),
+		referenceYCbCr: make([]YCbCrColor, len(referenceRGB)),
 	}
 
 	for i, c := range referenceRGB {
 		r.referenceLAB[i] = RGBToLAB(c)
+		r.referenceYCbCr[i] = RGBToYCbCr(c)
 	}
 
 	return r
@@ -155,14 +163,12 @@ func (r *Recognizer) RecognizeColor(c color.RGBA) (ColorID, float64) {
 }
 
 func (r *Recognizer) RecognizeColorRGB(c color.RGBA) (ColorID, uint32) {
+	input := RGBToYCbCr(c)
 	bestID := ColorID(0)
 	var minDist uint32 = ^uint32(0)
 
-	for i, ref := range r.referenceRGB {
-		dr := int32(c.R) - int32(ref.R)
-		dg := int32(c.G) - int32(ref.G)
-		db := int32(c.B) - int32(ref.B)
-		dist := uint32(dr*dr + dg*dg + db*db)
+	for i, ref := range r.referenceYCbCr {
+		dist := ycbcrDistance(input, ref)
 		if dist < minDist {
 			minDist = dist
 			bestID = ColorID(i)
@@ -170,6 +176,30 @@ func (r *Recognizer) RecognizeColorRGB(c color.RGBA) (ColorID, uint32) {
 	}
 
 	return bestID, minDist
+}
+
+func RGBToYCbCr(c color.RGBA) YCbCrColor {
+	r := int32(c.R)
+	g := int32(c.G)
+	b := int32(c.B)
+	y := (299*r + 587*g + 114*b + 500) / 1000
+	cb := (565*(b-y) + signedRoundOffset(b-y, 1000)) / 1000
+	cr := (713*(r-y) + signedRoundOffset(r-y, 1000)) / 1000
+	return YCbCrColor{Y: y, Cb: cb, Cr: cr}
+}
+
+func ycbcrDistance(a, b YCbCrColor) uint32 {
+	dy := a.Y - b.Y
+	dcb := a.Cb - b.Cb
+	dcr := a.Cr - b.Cr
+	return uint32(dy*dy + dcb*dcb + dcr*dcr)
+}
+
+func signedRoundOffset(v int32, scale int32) int32 {
+	if v < 0 {
+		return -scale / 2
+	}
+	return scale / 2
 }
 
 // GetColor 获取颜色 ID 对应的 RGB 颜色
