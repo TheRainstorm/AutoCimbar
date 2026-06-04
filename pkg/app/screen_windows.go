@@ -226,7 +226,6 @@ func (w *nativeWindow) updateFrame() error {
 	w.pixels = pixels
 	w.mu.Unlock()
 
-	w.source.notePresented()
 	return nil
 }
 
@@ -255,6 +254,7 @@ func (w *nativeWindow) paint(hwnd uintptr) {
 			dibRGBColors,
 			srccopy,
 		)
+		w.source.notePresented()
 	}
 	procEndPaint.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
 }
