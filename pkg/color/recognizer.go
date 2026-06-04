@@ -11,10 +11,13 @@ type ColorID uint8
 
 const (
 	// 4 色模式 (2 bits)
-	ColorBlack ColorID = 0
+	ColorGreen ColorID = 0
 	ColorWhite ColorID = 1
 	ColorRed   ColorID = 2
 	ColorBlue  ColorID = 3
+
+	// ColorBlack is kept as a compatibility alias for older callers.
+	ColorBlack ColorID = ColorGreen
 
 	// NumColors4 4 色模式的颜色数量
 	NumColors4 = 4
@@ -22,7 +25,7 @@ const (
 
 // Color4Palette 4 色调色板（高对比度）
 var Color4Palette = []color.RGBA{
-	{R: 0, G: 0, B: 0, A: 255},       // 黑色
+	{R: 0, G: 255, B: 0, A: 255},     // 绿色
 	{R: 255, G: 255, B: 255, A: 255}, // 白色
 	{R: 255, G: 0, B: 0, A: 255},     // 红色
 	{R: 0, G: 0, B: 255, A: 255},     // 蓝色
@@ -64,8 +67,13 @@ func (r *Recognizer) Recognize(cellImg image.Image) (ColorID, float64) {
 	// 计算平均颜色
 	avgColor := computeAverageColor(cellImg)
 
+	return r.RecognizeColor(avgColor)
+}
+
+// RecognizeColor 识别单个 RGB 颜色。
+func (r *Recognizer) RecognizeColor(c color.RGBA) (ColorID, float64) {
 	// 转换到 LAB 空间
-	avgLAB := RGBToLAB(avgColor)
+	avgLAB := RGBToLAB(c)
 
 	// 与参考颜色比较
 	minDist := math.MaxFloat64

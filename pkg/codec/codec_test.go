@@ -199,28 +199,23 @@ func TestDrawCell(t *testing.T) {
 // TestExtractCells 测试 cell 提取
 func TestExtractCells(t *testing.T) {
 	symRec, colorRec := createTestRecognizers(t)
+	encoder := NewEncoder(symRec, colorRec, 8, 2)
 	decoder := NewDecoder(symRec, colorRec, 8, 10)
 
 	// 创建一个简单的测试图像（2x2 grid）
 	decoder.gridSize = 2
 	img := image.NewRGBA(image.Rect(0, 0, 16, 16))
 
-	// 填充 4 个不同颜色的区域
-	colors := []color.RGBA{
-		{R: 0, G: 0, B: 0, A: 255},     // 黑色
-		{R: 255, G: 255, B: 255, A: 255}, // 白色
-		{R: 255, G: 0, B: 0, A: 255},     // 红色
-		{R: 0, G: 0, B: 255, A: 255},     // 蓝色
+	inputCells := []Cell{
+		{Color: colorpkg.ColorGreen, Shape: 0},
+		{Color: colorpkg.ColorWhite, Shape: 1},
+		{Color: colorpkg.ColorRed, Shape: 2},
+		{Color: colorpkg.ColorBlue, Shape: 3},
 	}
-
-	for i := 0; i < 4; i++ {
+	for i, cell := range inputCells {
 		x0 := (i % 2) * 8
 		y0 := (i / 2) * 8
-		for y := y0; y < y0+8; y++ {
-			for x := x0; x < x0+8; x++ {
-				img.Set(x, y, colors[i])
-			}
-		}
+		encoder.drawCell(img, x0, y0, cell)
 	}
 
 	// 提取 cells
@@ -235,7 +230,7 @@ func TestExtractCells(t *testing.T) {
 
 	// 验证颜色识别
 	expectedColors := []colorpkg.ColorID{
-		colorpkg.ColorBlack,
+		colorpkg.ColorGreen,
 		colorpkg.ColorWhite,
 		colorpkg.ColorRed,
 		colorpkg.ColorBlue,

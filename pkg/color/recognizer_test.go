@@ -15,12 +15,12 @@ func TestRecognizer4ColorRecognize(t *testing.T) {
 		color    color.RGBA
 		expected ColorID
 	}{
-		{"Black", color.RGBA{R: 0, G: 0, B: 0, A: 255}, ColorBlack},
+		{"Green", color.RGBA{R: 0, G: 255, B: 0, A: 255}, ColorGreen},
 		{"White", color.RGBA{R: 255, G: 255, B: 255, A: 255}, ColorWhite},
 		{"Red", color.RGBA{R: 255, G: 0, B: 0, A: 255}, ColorRed},
 		{"Blue", color.RGBA{R: 0, G: 0, B: 255, A: 255}, ColorBlue},
 		// 近似颜色
-		{"Dark gray (should be black)", color.RGBA{R: 30, G: 30, B: 30, A: 255}, ColorBlack},
+		{"Dark green", color.RGBA{R: 0, G: 200, B: 0, A: 255}, ColorGreen},
 		{"Light gray (should be white)", color.RGBA{R: 220, G: 220, B: 220, A: 255}, ColorWhite},
 		{"Orange-red (should be red)", color.RGBA{R: 255, G: 50, B: 0, A: 255}, ColorRed},
 		{"Dark blue", color.RGBA{R: 0, G: 0, B: 200, A: 255}, ColorBlue},
@@ -43,10 +43,10 @@ func TestRecognizer4ColorRecognize(t *testing.T) {
 // TestRGBToLAB 测试 RGB 到 LAB 转换
 func TestRGBToLAB(t *testing.T) {
 	tests := []struct {
-		name  string
-		rgb   color.RGBA
+		name string
+		rgb  color.RGBA
 		// 预期的大致 LAB 值（允许一定误差）
-		expectL float64
+		expectL   float64
 		tolerance float64
 	}{
 		{"Black", color.RGBA{R: 0, G: 0, B: 0, A: 255}, 0, 5},
@@ -138,7 +138,7 @@ func TestGetColor(t *testing.T) {
 		id       ColorID
 		expected color.RGBA
 	}{
-		{ColorBlack, color.RGBA{R: 0, G: 0, B: 0, A: 255}},
+		{ColorGreen, color.RGBA{R: 0, G: 255, B: 0, A: 255}},
 		{ColorWhite, color.RGBA{R: 255, G: 255, B: 255, A: 255}},
 		{ColorRed, color.RGBA{R: 255, G: 0, B: 0, A: 255}},
 		{ColorBlue, color.RGBA{R: 0, G: 0, B: 255, A: 255}},

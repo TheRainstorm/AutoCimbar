@@ -158,12 +158,9 @@ func (e *Encoder) drawCell(img *image.RGBA, x, y int, cell Cell) {
 			srcX := dx * 8 / e.cellSize
 			srcY := dy * 8 / e.cellSize
 
-			// 获取模板像素
-			gray := template.GrayAt(srcX, srcY).Y
-
-			// 如果模板像素是亮的，使用指定颜色；否则使用黑色背景
+			// 如果模板 hash 位是前景，使用指定颜色；否则使用黑色背景。
 			var finalColor color.RGBA
-			if gray > 128 {
+			if templateForeground(template, srcX, srcY) {
 				finalColor = cellColor
 			} else {
 				finalColor = color.RGBA{R: 0, G: 0, B: 0, A: 255}
@@ -220,9 +217,9 @@ func (d *Decoder) extractCells(img image.Image) ([]Cell, error) {
 		// 提取 cell 子图像
 		cellImg := extractSubImage(img, x, y, d.cellSize, d.cellSize)
 
-		// 识别颜色和形状
-		colorID, _ := d.colorRecognizer.Recognize(cellImg)
+		// 先识别形状，再只从形状前景像素采样颜色，避免黑色背景稀释颜色。
 		shapeID, _ := d.symbolRecognizer.Recognize(cellImg)
+		colorID := d.recognizeCellColor(cellImg, shapeID)
 
 		cells[i] = Cell{
 			Color: colorID,
@@ -231,6 +228,69 @@ func (d *Decoder) extractCells(img image.Image) ([]Cell, error) {
 	}
 
 	return cells, nil
+}
+
+func (d *Decoder) recognizeCellColor(cellImg image.Image, shapeID symbol.SymbolID) colorpkg.ColorID {
+	template, err := d.symbolRecognizer.GetTemplate(shapeID)
+	if err != nil {
+		colorID, _ := d.colorRecognizer.Recognize(cellImg)
+		return colorID
+	}
+
+	bounds := cellImg.Bounds()
+	var sumR, sumG, sumB uint64
+	count := 0
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			tx := (x - bounds.Min.X) * 8 / bounds.Dx()
+			ty := (y - bounds.Min.Y) * 8 / bounds.Dy()
+			if !templateForeground(template, tx, ty) {
+				continue
+			}
+
+			r, g, b, _ := cellImg.At(x, y).RGBA()
+			sumR += uint64(r >> 8)
+			sumG += uint64(g >> 8)
+			sumB += uint64(b >> 8)
+			count++
+		}
+	}
+
+	if count == 0 {
+		colorID, _ := d.colorRecognizer.Recognize(cellImg)
+		return colorID
+	}
+
+	avg := color.RGBA{
+		R: uint8(sumR / uint64(count)),
+		G: uint8(sumG / uint64(count)),
+		B: uint8(sumB / uint64(count)),
+		A: 255,
+	}
+	colorID, _ := d.colorRecognizer.RecognizeColor(avg)
+	return colorID
+}
+
+func templateForeground(template *image.Gray, x, y int) bool {
+	return template.GrayAt(x, y).Y > templateAverageGray(template)
+}
+
+func templateAverageGray(template *image.Gray) uint8 {
+	bounds := template.Bounds()
+	var sum uint64
+	count := 0
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			sum += uint64(template.GrayAt(x, y).Y)
+			count++
+		}
+	}
+	if count == 0 {
+		return 128
+	}
+	return uint8(sum / uint64(count))
 }
 
 // cellsToBytes 将 cells 转换为字节数组
