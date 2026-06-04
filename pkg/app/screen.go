@@ -171,7 +171,15 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 	progress := newScreenDecoderProgress(cfg.Progress, blockSize)
 	defer progress.finishLine()
 
+	nextCapture := time.Now()
 	for time.Now().Before(deadline) {
+		if now := time.Now(); now.Before(nextCapture) {
+			time.Sleep(time.Until(nextCapture))
+		} else if now.Sub(nextCapture) > interval {
+			nextCapture = now
+		}
+		nextCapture = nextCapture.Add(interval)
+
 		img, err := capturer.Capture()
 		if err != nil {
 			return fmt.Errorf("capture screen: %w", err)
@@ -180,13 +188,11 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 		packet, err := codecDec.Decode(img)
 		if err != nil {
 			progress.noteInvalid()
-			time.Sleep(interval)
 			continue
 		}
 		frame, err := ParsePacket(packet, blockSize)
 		if err != nil {
 			progress.noteInvalid()
-			time.Sleep(interval)
 			continue
 		}
 		if fountainDec == nil {
@@ -199,7 +205,6 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 			progress.noteStarted(fileSize, blockCount)
 		} else if frame.FileSize != fileSize {
 			progress.noteInvalid()
-			time.Sleep(interval)
 			continue
 		}
 		if _, err := fountainDec.AddFrame(frame.FrameID, frame.Payload); err != nil {
@@ -213,7 +218,6 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 			}
 			return os.WriteFile(cfg.OutputPath, result, 0644)
 		}
-		time.Sleep(interval)
 	}
 
 	rank := 0
