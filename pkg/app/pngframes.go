@@ -22,13 +22,16 @@ type EncodeResult struct {
 	ImageSize       int
 	FrameCapacity   int
 	PayloadCapacity int
+	ECCPercent      int
+	ECCBytes        int
+	PacketBytes     int
 	FileSize        int
 	BlockSize       int
 	BlockCount      int
 	MD5             string
 }
 
-func EncodeFileToPNGFrames(inputPath string, outputDir string, gridSize int, scale int, symbolDir string, redundancyPercent int, blockSize int) (*EncodeResult, error) {
+func EncodeFileToPNGFrames(inputPath string, outputDir string, gridSize int, scale int, symbolDir string, redundancyPercent int, blockSize int, eccPercent int) (*EncodeResult, error) {
 	if gridSize <= 0 {
 		return nil, fmt.Errorf("Q must be > 0")
 	}
@@ -39,9 +42,9 @@ func EncodeFileToPNGFrames(inputPath string, outputDir string, gridSize int, sca
 		return nil, fmt.Errorf("redundancy must be >= 0")
 	}
 
-	payloadCapacity := PayloadCapacityBytes(gridSize)
-	if payloadCapacity <= 0 {
-		return nil, fmt.Errorf("grid Q=%d capacity is too small: frame capacity %d, frame header %d", gridSize, GridCapacityBytes(gridSize), FrameHeaderSize)
+	payloadCapacity, err := PayloadCapacityBytesWithECC(gridSize, eccPercent)
+	if err != nil {
+		return nil, err
 	}
 	if blockSize == 0 {
 		blockSize = payloadCapacity
@@ -51,6 +54,10 @@ func EncodeFileToPNGFrames(inputPath string, outputDir string, gridSize int, sca
 	}
 	if blockSize > payloadCapacity {
 		return nil, fmt.Errorf("block size %d exceeds frame payload capacity %d", blockSize, payloadCapacity)
+	}
+	packetCodec, err := NewFramePacketCodec(gridSize, eccPercent, blockSize)
+	if err != nil {
+		return nil, err
 	}
 
 	data, err := os.ReadFile(inputPath)
@@ -82,10 +89,16 @@ func EncodeFileToPNGFrames(inputPath string, outputDir string, gridSize int, sca
 	}
 
 	paths := make([]string, 0, totalFrames)
+	var packetBuf []byte
+	var encodedPacketBuf []byte
 	for i := 0; i < totalFrames; i++ {
 		block := fountainEnc.Encode(uint32(i))
-		packet := BuildPacket(len(data), block.FrameID, block.Data)
-		img, err := enc.Encode(packet)
+		packetBuf = BuildPacketInto(packetBuf, len(data), block.FrameID, block.Data)
+		encodedPacketBuf, err = packetCodec.EncodeInto(packetBuf, encodedPacketBuf)
+		if err != nil {
+			return nil, fmt.Errorf("ecc encode frame %d: %w", i, err)
+		}
+		img, err := enc.Encode(encodedPacketBuf)
 		if err != nil {
 			return nil, fmt.Errorf("encode frame %d: %w", i, err)
 		}
@@ -115,6 +128,9 @@ func EncodeFileToPNGFrames(inputPath string, outputDir string, gridSize int, sca
 		ImageSize:       imageSize,
 		FrameCapacity:   GridCapacityBytes(gridSize),
 		PayloadCapacity: payloadCapacity,
+		ECCPercent:      eccPercent,
+		ECCBytes:        packetCodec.ParitySize(),
+		PacketBytes:     packetCodec.EncodedSize(),
 		FileSize:        len(data),
 		BlockSize:       fountainEnc.BlockSize(),
 		BlockCount:      fountainEnc.BlockCount(),
@@ -122,7 +138,7 @@ func EncodeFileToPNGFrames(inputPath string, outputDir string, gridSize int, sca
 	}, nil
 }
 
-func DecodePNGFramesToFile(inputPath string, outputPath string, gridSize int, scale int, symbolDir string, blockSize int) error {
+func DecodePNGFramesToFile(inputPath string, outputPath string, gridSize int, scale int, symbolDir string, blockSize int, eccPercent int) error {
 	if gridSize <= 0 {
 		return fmt.Errorf("Q must be > 0")
 	}
@@ -137,9 +153,9 @@ func DecodePNGFramesToFile(inputPath string, outputPath string, gridSize int, sc
 	if len(paths) == 0 {
 		return fmt.Errorf("no PNG frames found in %s", inputPath)
 	}
-	payloadCapacity := PayloadCapacityBytes(gridSize)
-	if payloadCapacity <= 0 {
-		return fmt.Errorf("grid Q=%d capacity is too small: frame capacity %d, frame header %d", gridSize, GridCapacityBytes(gridSize), FrameHeaderSize)
+	payloadCapacity, err := PayloadCapacityBytesWithECC(gridSize, eccPercent)
+	if err != nil {
+		return err
 	}
 	if blockSize == 0 {
 		blockSize = payloadCapacity
@@ -150,6 +166,10 @@ func DecodePNGFramesToFile(inputPath string, outputPath string, gridSize int, sc
 	if blockSize > payloadCapacity {
 		return fmt.Errorf("block size %d exceeds frame payload capacity %d", blockSize, payloadCapacity)
 	}
+	packetCodec, err := NewFramePacketCodec(gridSize, eccPercent, blockSize)
+	if err != nil {
+		return err
+	}
 	symRec, err := LoadLibcimbarSymbols(symbolDir)
 	if err != nil {
 		return err
@@ -158,11 +178,13 @@ func DecodePNGFramesToFile(inputPath string, outputPath string, gridSize int, sc
 	var fountainDec *fountain.Decoder
 	blockCount := 0
 	fileSize := -1
+	var packetBuf []byte
 	for _, path := range paths {
-		frame, err := decodeFrameFile(codecDec, path, blockSize)
+		frame, packet, err := decodeFrameFile(codecDec, packetCodec, path, blockSize, packetBuf)
 		if err != nil {
 			return err
 		}
+		packetBuf = packet
 		if fountainDec == nil {
 			fileSize = frame.FileSize
 			blockCount = blockCountForFile(fileSize, blockSize)
@@ -198,30 +220,36 @@ func DecodePNGFramesToFile(inputPath string, outputPath string, gridSize int, sc
 	return nil
 }
 
-func decodeFrameFile(dec *codec.Decoder, path string, blockSize int) (*Frame, error) {
+func decodeFrameFile(dec *codec.Decoder, packetCodec interface {
+	DecodeInto([]byte, []byte) ([]byte, error)
+}, path string, blockSize int, dst []byte) (*Frame, []byte, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("open frame %s: %w", path, err)
+		return nil, dst, fmt.Errorf("open frame %s: %w", path, err)
 	}
 	img, err := png.Decode(f)
 	closeErr := f.Close()
 	if err != nil {
-		return nil, fmt.Errorf("decode png %s: %w", path, err)
+		return nil, dst, fmt.Errorf("decode png %s: %w", path, err)
 	}
 	if closeErr != nil {
-		return nil, fmt.Errorf("close frame %s: %w", path, closeErr)
+		return nil, dst, fmt.Errorf("close frame %s: %w", path, closeErr)
 	}
 
-	packet, err := dec.Decode(img)
+	encodedPacket, err := dec.Decode(img)
 	if err != nil {
-		return nil, fmt.Errorf("decode frame %s: %w", path, err)
+		return nil, dst, fmt.Errorf("decode frame %s: %w", path, err)
+	}
+	packet, err := packetCodec.DecodeInto(encodedPacket, dst)
+	if err != nil {
+		return nil, dst, fmt.Errorf("ecc decode frame %s: %w", path, err)
 	}
 
 	frame, err := ParsePacket(packet, blockSize)
 	if err != nil {
-		return nil, fmt.Errorf("parse frame %s: %w", path, err)
+		return nil, dst, fmt.Errorf("parse frame %s: %w", path, err)
 	}
-	return frame, nil
+	return frame, packet, nil
 }
 
 func collectPNGPaths(inputPath string) ([]string, error) {

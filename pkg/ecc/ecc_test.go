@@ -143,9 +143,9 @@ func TestDecodeWithErrors(t *testing.T) {
 	t.Logf("Can correct up to %d erasures (missing shards)", maxErasures)
 
 	tests := []struct {
-		name       string
-		numErrors  int
-		shouldFix  bool
+		name      string
+		numErrors int
+		shouldFix bool
 	}{
 		{"1 erasure", 1, true},
 		{"Max erasures", maxErasures, maxErasures > 0},
@@ -245,6 +245,57 @@ func TestDecodeInvalidSize(t *testing.T) {
 	_, err = ecc.Decode(invalidData, 80)
 	if err == nil {
 		t.Error("Expected error for invalid data size, got nil")
+	}
+}
+
+func TestPacketCodecCorrectsByteErrors(t *testing.T) {
+	codec, err := NewPacketCodec(20, 512)
+	if err != nil {
+		t.Fatalf("NewPacketCodec failed: %v", err)
+	}
+	data := make([]byte, codec.DataSize())
+	for i := range data {
+		data[i] = byte(i*17 + 3)
+	}
+
+	encoded, err := codec.Encode(data)
+	if err != nil {
+		t.Fatalf("Encode failed: %v", err)
+	}
+	if len(encoded) != codec.EncodedSize() {
+		t.Fatalf("encoded len = %d, want %d", len(encoded), codec.EncodedSize())
+	}
+
+	corrupted := append([]byte(nil), encoded...)
+	corrupted[3] ^= 0x55
+	corrupted[97] ^= 0xa3
+	corrupted[211] ^= 0x1f
+	decoded, err := codec.Decode(corrupted)
+	if err != nil {
+		t.Fatalf("Decode failed: %v", err)
+	}
+	if !bytes.Equal(decoded, data) {
+		t.Fatal("decoded packet differs from input")
+	}
+}
+
+func TestPacketCodecRejectsTooManyErrors(t *testing.T) {
+	codec, err := NewPacketCodec(10, 128)
+	if err != nil {
+		t.Fatalf("NewPacketCodec failed: %v", err)
+	}
+	data := bytes.Repeat([]byte{0x42}, codec.DataSize())
+	encoded, err := codec.Encode(data)
+	if err != nil {
+		t.Fatalf("Encode failed: %v", err)
+	}
+
+	corrupted := append([]byte(nil), encoded...)
+	for i := 0; i < 16 && i < len(corrupted); i++ {
+		corrupted[i] ^= byte(i + 1)
+	}
+	if _, err := codec.Decode(corrupted); err == nil {
+		t.Fatal("expected decode failure for too many errors")
 	}
 }
 

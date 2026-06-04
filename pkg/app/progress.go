@@ -18,6 +18,9 @@ type screenEncoderProgress struct {
 	blockCount    int
 	frameCapacity int
 	payloadBytes  int
+	eccPercent    int
+	eccBytes      int
+	packetBytes   int
 	encoded       uint64
 	presented     uint64
 	lastEncoded   uint64
@@ -40,6 +43,9 @@ func newScreenEncoderProgress(out io.Writer, result *EncodeResult) *screenEncode
 		blockCount:    result.BlockCount,
 		frameCapacity: result.FrameCapacity,
 		payloadBytes:  result.PayloadCapacity,
+		eccPercent:    result.ECCPercent,
+		eccBytes:      result.ECCBytes,
+		packetBytes:   result.PacketBytes,
 	}
 }
 
@@ -47,7 +53,11 @@ func (p *screenEncoderProgress) startSummary() {
 	if p == nil {
 		return
 	}
-	packetBytes := FrameHeaderSize + p.blockSize
+	packetDataBytes := FrameHeaderSize + p.blockSize
+	packetBytes := p.packetBytes
+	if packetBytes == 0 {
+		packetBytes = packetDataBytes
+	}
 	unusedBytes := p.payloadBytes - p.blockSize
 	if unusedBytes < 0 {
 		unusedBytes = 0
@@ -57,7 +67,12 @@ func (p *screenEncoderProgress) startSummary() {
 	fmt.Fprintf(p.out, "  header=%d bytes: magic=ACB1 file_size=8 frame_id=4\n", FrameHeaderSize)
 	fmt.Fprintf(p.out, "  data_area=%d bytes after header\n", p.payloadBytes)
 	fmt.Fprintf(p.out, "  fountain_block=%d bytes: one encoded source block; last source block is zero-padded\n", p.blockSize)
-	fmt.Fprintf(p.out, "  ecc=disabled: 0 bytes overhead\n")
+	if p.eccPercent > 0 {
+		fmt.Fprintf(p.out, "  ecc=%d%%: packet_data=%d bytes parity=%d bytes interleaved=yes\n", p.eccPercent, packetDataBytes, p.eccBytes)
+	} else {
+		fmt.Fprintf(p.out, "  ecc=disabled: 0 bytes overhead\n")
+	}
+	fmt.Fprintf(p.out, "  unused_codec_capacity=%d bytes\n", p.frameCapacity-packetBytes)
 	fmt.Fprintf(p.out, "  unused_data_area=%d bytes\n", unusedBytes)
 }
 
@@ -133,9 +148,11 @@ type screenDecoderProgress struct {
 	blockCount        int
 	rank              int
 	captured          uint64
+	decoded           uint64
 	valid             uint64
 	invalid           uint64
 	lastCaptured      uint64
+	lastDecoded       uint64
 	lastValid         uint64
 	lastRecoveredByte int
 }
@@ -159,6 +176,14 @@ func (p *screenDecoderProgress) noteCaptured() {
 		return
 	}
 	p.captured++
+	p.render(false)
+}
+
+func (p *screenDecoderProgress) noteDecoded() {
+	if p == nil {
+		return
+	}
+	p.decoded++
 	p.render(false)
 }
 
@@ -210,7 +235,8 @@ func (p *screenDecoderProgress) render(force bool) {
 	}
 
 	captureFPS := float64(p.captured-p.lastCaptured) / window.Seconds()
-	decodeFPS := float64(p.valid-p.lastValid) / window.Seconds()
+	decodeFPS := float64(p.decoded-p.lastDecoded) / window.Seconds()
+	validFPS := float64(p.valid-p.lastValid) / window.Seconds()
 	recovered := p.recoveredBytes()
 	currentKB := float64(recovered-p.lastRecoveredByte) / window.Seconds() / 1024
 	elapsed := now.Sub(p.start)
@@ -220,8 +246,8 @@ func (p *screenDecoderProgress) render(force bool) {
 	}
 
 	if p.fileSize < 0 {
-		fmt.Fprintf(p.out, "\rwaiting for valid frame capture_fps=%5.1f invalid=%d elapsed=%s%s",
-			captureFPS, p.invalid, shortDuration(elapsed), clearLine())
+		fmt.Fprintf(p.out, "\rwaiting for valid frame capture_fps=%5.1f decode_fps=%5.1f valid_fps=%5.1f invalid=%d elapsed=%s%s",
+			captureFPS, decodeFPS, validFPS, p.invalid, shortDuration(elapsed), clearLine())
 	} else {
 		progress := 1.0
 		if p.fileSize > 0 {
@@ -237,14 +263,15 @@ func (p *screenDecoderProgress) render(force bool) {
 		} else if recovered >= p.fileSize {
 			eta = "0s"
 		}
-		fmt.Fprintf(p.out, "\r%s capture_fps=%5.1f decode_fps=%5.1f speed=%7.1f KB/s avg=%7.1f KB/s data=%s/%s rank=%d/%d elapsed=%s eta=%s%s",
-			progressBar(progress, 24), captureFPS, decodeFPS, currentKB, averageKB,
+		fmt.Fprintf(p.out, "\r%s capture_fps=%5.1f decode_fps=%5.1f valid_fps=%5.1f speed=%7.1f KB/s avg=%7.1f KB/s data=%s/%s rank=%d/%d elapsed=%s eta=%s%s",
+			progressBar(progress, 24), captureFPS, decodeFPS, validFPS, currentKB, averageKB,
 			formatBytes(recovered), formatBytes(p.fileSize), p.rank, p.blockCount,
 			shortDuration(elapsed), eta, clearLine())
 	}
 
 	p.last = now
 	p.lastCaptured = p.captured
+	p.lastDecoded = p.decoded
 	p.lastValid = p.valid
 	p.lastRecoveredByte = recovered
 }

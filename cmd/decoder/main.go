@@ -15,6 +15,7 @@ func main() {
 	q := flag.Int("Q", 50, "grid size in cells")
 	b := flag.Int("B", 1, "screen scale factor")
 	blockSize := flag.Int("block-size", 0, "fountain block size in bytes, 0 uses max frame payload")
+	eccPercent := flag.Int("ecc", 0, "per-frame Reed-Solomon ECC percentage; encoder must use the same value")
 	screen := flag.Bool("screen", false, "capture frames from screen instead of reading PNG files")
 	region := flag.String("R", "", "screen capture region SCREEN:X:Y, negative values anchor from right/bottom")
 	fps := flag.Int("fps", 30, "screen capture rate")
@@ -41,6 +42,7 @@ func main() {
 			Scale:      *b,
 			SymbolDir:  *symbolDir,
 			BlockSize:  *blockSize,
+			ECCPercent: *eccPercent,
 			Region:     *region,
 			FPS:        *fps,
 			Timeout:    *timeout,
@@ -58,7 +60,7 @@ func main() {
 		return
 	}
 
-	if err := app.DecodePNGFramesToFile(*input, *output, *q, *b, *symbolDir, *blockSize); err != nil {
+	if err := app.DecodePNGFramesToFile(*input, *output, *q, *b, *symbolDir, *blockSize, *eccPercent); err != nil {
 		fmt.Fprintf(os.Stderr, "decoder failed: %v\n", err)
 		os.Exit(1)
 	}

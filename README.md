@@ -74,6 +74,13 @@ Windows PowerShell：
 .\bin\decoder.exe -i frames -o output.bin -Q 50 -B 1
 ```
 
+启用单帧 ECC 时，encoder 和 decoder 必须使用相同 `-ecc`：
+
+```bash
+./bin/encoder -i input.bin -o frames -Q 80 -B 1 -redundancy 100 -ecc 20
+./bin/decoder -i frames -o output.bin -Q 80 -B 1 -ecc 20
+```
+
 校验：
 
 ```bash
@@ -154,6 +161,7 @@ Get-FileHash .\output.bin
 -B             cell 缩放倍数，实际 cell 像素为 8 * B
 -redundancy    PNG 模式额外冗余帧百分比，默认 10
 -block-size    喷泉码 block 大小，0 表示使用最大 payload
+-ecc           单帧 Reed-Solomon ECC 百分比，默认 0；必须与 decoder 一致
 -screen        启用屏幕播放模式
 -R             屏幕播放位置，格式 X:Y 或 SCREEN:X:Y
 -fps           屏幕播放帧率
@@ -172,6 +180,7 @@ Get-FileHash .\output.bin
 -Q             grid cell 数，必须与 encoder 一致
 -B             cell 缩放倍数，必须与 encoder 一致
 -block-size    喷泉码 block 大小，必须与 encoder 一致
+-ecc           单帧 Reed-Solomon ECC 百分比，默认 0；必须与 encoder 一致
 -screen        启用截图解码模式
 -R             截图区域，格式 SCREEN:X:Y
 -fps           截图频率
@@ -191,8 +200,10 @@ go test ./...
 - 颜色识别
 - codec 往返
 - Reed-Solomon 模块
+- 单帧 ECC 字节错误修复
 - 喷泉码恢复
 - PNG 帧端到端恢复
+- 启用 ECC 的 PNG 帧端到端恢复
 - 删除部分帧后的喷泉码恢复
 - 屏幕帧输出的可解码性
 
@@ -200,6 +211,7 @@ go test ./...
 
 - 当前喷泉码是纯 Go 线性 XOR 喷泉码，decoder 需要知道源块数量；实现方式是在每帧头携带文件大小，用于推导 `blockCount`。
 - 每帧头当前包含 `fileSize(8 bytes) + frameID(4 bytes)`，其余为喷泉编码块。
+- `-ecc` 是运行时约定参数，不写入帧头；开启后会减少每帧 fountain payload，并在单帧内添加交织后的 RS 校验字节。
 - Windows 屏幕模式使用 Win32 原生窗口；非 Windows 平台暂时使用 HTTP/浏览器 fallback。
 - 暂未实现 GPU 加速和真正的 Wirehair/Raptor 类喷泉码。
 

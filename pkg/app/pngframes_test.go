@@ -18,7 +18,7 @@ func TestPNGFrameFountainRoundTrip(t *testing.T) {
 		t.Fatalf("write input: %v", err)
 	}
 
-	result, err := EncodeFileToPNGFrames(inputPath, frameDir, 50, 1, testSymbolDir(t), 10, 0)
+	result, err := EncodeFileToPNGFrames(inputPath, frameDir, 50, 1, testSymbolDir(t), 10, 0, 0)
 	if err != nil {
 		t.Fatalf("EncodeFileToPNGFrames failed: %v", err)
 	}
@@ -26,7 +26,7 @@ func TestPNGFrameFountainRoundTrip(t *testing.T) {
 		t.Fatalf("block count = %d, want 5", result.BlockCount)
 	}
 
-	if err := DecodePNGFramesToFile(frameDir, outputPath, 50, 1, testSymbolDir(t), 0); err != nil {
+	if err := DecodePNGFramesToFile(frameDir, outputPath, 50, 1, testSymbolDir(t), 0, 0); err != nil {
 		t.Fatalf("DecodePNGFramesToFile failed: %v", err)
 	}
 
@@ -50,7 +50,7 @@ func TestPNGFrameFountainRecoversDroppedFrames(t *testing.T) {
 		t.Fatalf("write input: %v", err)
 	}
 
-	result, err := EncodeFileToPNGFrames(inputPath, frameDir, 50, 1, testSymbolDir(t), 100, 0)
+	result, err := EncodeFileToPNGFrames(inputPath, frameDir, 50, 1, testSymbolDir(t), 100, 0, 0)
 	if err != nil {
 		t.Fatalf("EncodeFileToPNGFrames failed: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestPNGFrameFountainRecoversDroppedFrames(t *testing.T) {
 		}
 	}
 
-	if err := DecodePNGFramesToFile(frameDir, outputPath, 50, 1, testSymbolDir(t), 0); err != nil {
+	if err := DecodePNGFramesToFile(frameDir, outputPath, 50, 1, testSymbolDir(t), 0, 0); err != nil {
 		t.Fatalf("DecodePNGFramesToFile failed: %v", err)
 	}
 
@@ -74,6 +74,41 @@ func TestPNGFrameFountainRecoversDroppedFrames(t *testing.T) {
 	}
 	if !bytes.Equal(output, input) {
 		t.Fatal("decoded output differs from input after dropped frames")
+	}
+}
+
+func TestPNGFrameFountainRoundTripWithECC(t *testing.T) {
+	dir := t.TempDir()
+	inputPath := filepath.Join(dir, "input.bin")
+	outputPath := filepath.Join(dir, "output.bin")
+	frameDir := filepath.Join(dir, "frames")
+
+	input := deterministicBytes(8192)
+	if err := os.WriteFile(inputPath, input, 0644); err != nil {
+		t.Fatalf("write input: %v", err)
+	}
+
+	result, err := EncodeFileToPNGFrames(inputPath, frameDir, 50, 1, testSymbolDir(t), 10, 0, 20)
+	if err != nil {
+		t.Fatalf("EncodeFileToPNGFrames failed: %v", err)
+	}
+	if result.ECCBytes <= 0 {
+		t.Fatalf("ECCBytes = %d, want > 0", result.ECCBytes)
+	}
+	if result.PacketBytes > result.FrameCapacity {
+		t.Fatalf("packet bytes = %d exceeds frame capacity %d", result.PacketBytes, result.FrameCapacity)
+	}
+
+	if err := DecodePNGFramesToFile(frameDir, outputPath, 50, 1, testSymbolDir(t), 0, 20); err != nil {
+		t.Fatalf("DecodePNGFramesToFile failed: %v", err)
+	}
+
+	output, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	if !bytes.Equal(output, input) {
+		t.Fatal("decoded output differs from input")
 	}
 }
 

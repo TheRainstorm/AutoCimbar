@@ -16,6 +16,7 @@ func main() {
 	b := flag.Int("B", 1, "screen scale factor")
 	redundancy := flag.Int("redundancy", 10, "extra fountain frames as a percentage")
 	blockSize := flag.Int("block-size", 0, "fountain block size in bytes, 0 uses max frame payload")
+	eccPercent := flag.Int("ecc", 0, "per-frame Reed-Solomon ECC percentage; decoder must use the same value")
 	screen := flag.Bool("screen", false, "show frames in a borderless screen window instead of writing PNG files")
 	region := flag.String("R", "0:0", "screen window region X:Y or SCREEN:X:Y, negative values anchor from right/bottom")
 	fps := flag.Int("fps", 30, "screen frame rate")
@@ -44,16 +45,17 @@ func main() {
 			fmt.Printf("screen encoder serving http://%s/\n", *addr)
 		}
 		result, err := app.EncodeFileToScreen(app.ScreenEncodeConfig{
-			InputPath: *input,
-			GridSize:  *q,
-			Scale:     *b,
-			SymbolDir: *symbolDir,
-			BlockSize: *blockSize,
-			Region:    *region,
-			FPS:       *fps,
-			Addr:      *addr,
-			Open:      *open,
-			Progress:  os.Stderr,
+			InputPath:  *input,
+			GridSize:   *q,
+			Scale:      *b,
+			SymbolDir:  *symbolDir,
+			BlockSize:  *blockSize,
+			ECCPercent: *eccPercent,
+			Region:     *region,
+			FPS:        *fps,
+			Addr:       *addr,
+			Open:       *open,
+			Progress:   os.Stderr,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "screen encoder failed: %v\n", err)
@@ -64,7 +66,7 @@ func main() {
 		return
 	}
 
-	result, err := app.EncodeFileToPNGFrames(*input, *outputDir, *q, *b, *symbolDir, *redundancy, *blockSize)
+	result, err := app.EncodeFileToPNGFrames(*input, *outputDir, *q, *b, *symbolDir, *redundancy, *blockSize, *eccPercent)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "encoder failed: %v\n", err)
 		os.Exit(1)
@@ -72,7 +74,7 @@ func main() {
 
 	fmt.Printf("encoded %d bytes into %d frame(s), %d source block(s), md5=%s\n",
 		result.FileSize, len(result.FramePaths), result.BlockCount, result.MD5)
-	fmt.Printf("Q=%d B=%d cell=%dpx image=%dx%dpx payload=%d bytes/frame block=%d bytes\n",
-		result.GridSize, result.Scale, result.CellSize, result.ImageSize, result.ImageSize, result.PayloadCapacity, result.BlockSize)
+	fmt.Printf("Q=%d B=%d cell=%dpx image=%dx%dpx payload=%d bytes/frame block=%d bytes ecc=%d%% parity=%d bytes packet=%d bytes\n",
+		result.GridSize, result.Scale, result.CellSize, result.ImageSize, result.ImageSize, result.PayloadCapacity, result.BlockSize, result.ECCPercent, result.ECCBytes, result.PacketBytes)
 	fmt.Printf("output: %s\n", *outputDir)
 }
