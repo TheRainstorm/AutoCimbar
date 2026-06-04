@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"image"
 	"runtime"
+	"sync"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -25,7 +27,6 @@ const (
 
 	wmDestroy = 0x0002
 	wmPaint   = 0x000f
-	wmTimer   = 0x0113
 	wmKeyDown = 0x0100
 
 	vkEscape = 0x1b
@@ -48,12 +49,10 @@ var (
 	procEndPaint                      = user32.NewProc("EndPaint")
 	procGetMessageW                   = user32.NewProc("GetMessageW")
 	procInvalidateRect                = user32.NewProc("InvalidateRect")
-	procKillTimer                     = user32.NewProc("KillTimer")
 	procPostQuitMessage               = user32.NewProc("PostQuitMessage")
 	procRegisterClassExW              = user32.NewProc("RegisterClassExW")
 	procSetProcessDpiAwarenessContext = user32.NewProc("SetProcessDpiAwarenessContext")
 	procSetProcessDPIAware            = user32.NewProc("SetProcessDPIAware")
-	procSetTimer                      = user32.NewProc("SetTimer")
 	procShowWindow                    = user32.NewProc("ShowWindow")
 	procTranslateMessage              = user32.NewProc("TranslateMessage")
 	procUpdateWindow                  = user32.NewProc("UpdateWindow")
@@ -81,6 +80,7 @@ type nativeWindow struct {
 	height int
 	pixels []byte
 	err    error
+	mu     sync.Mutex
 }
 
 var activeNativeWindow *nativeWindow
@@ -142,18 +142,12 @@ func runScreenEncoderBackend(cfg ScreenEncodeConfig, source *screenFrameSource, 
 	}
 	win.hwnd = windows.Handle(hwnd)
 
-	interval := 1000 / cfg.FPS
-	if interval <= 0 {
-		interval = 1
-	}
-	timer, _, callErr := procSetTimer.Call(hwnd, 1, uintptr(uint32(interval)), 0)
-	if timer == 0 {
-		return fmt.Errorf("SetTimer failed: %w", callErr)
-	}
-	defer procKillTimer.Call(hwnd, 1)
-
 	procShowWindow.Call(hwnd, swShow)
 	procUpdateWindow.Call(hwnd)
+
+	stopFrames := make(chan struct{})
+	go win.runFrameLoop(cfg.FPS, stopFrames)
+	defer close(stopFrames)
 
 	var msg msg
 	for {
@@ -166,26 +160,16 @@ func runScreenEncoderBackend(cfg ScreenEncodeConfig, source *screenFrameSource, 
 		}
 		procTranslateMessage.Call(uintptr(unsafe.Pointer(&msg)))
 		procDispatchMessageW.Call(uintptr(unsafe.Pointer(&msg)))
-		if win.err != nil {
-			return win.err
+		if err := win.getErr(); err != nil {
+			return err
 		}
 	}
-	return win.err
+	return win.getErr()
 }
 
 func nativeWndProc(hwnd uintptr, msg uint32, wparam uintptr, lparam uintptr) uintptr {
 	win := activeNativeWindow
 	switch msg {
-	case wmTimer:
-		if win != nil {
-			if err := win.updateFrame(); err != nil {
-				win.err = err
-				procDestroyWindow.Call(hwnd)
-				return 0
-			}
-			procInvalidateRect.Call(hwnd, 0, 0)
-		}
-		return 0
 	case wmPaint:
 		if win != nil {
 			win.paint(hwnd)
@@ -204,7 +188,35 @@ func nativeWndProc(hwnd uintptr, msg uint32, wparam uintptr, lparam uintptr) uin
 	return ret
 }
 
+func (w *nativeWindow) runFrameLoop(fps int, stop <-chan struct{}) {
+	if fps <= 0 {
+		fps = 30
+	}
+	interval := time.Second / time.Duration(fps)
+	if interval <= 0 {
+		interval = time.Millisecond
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			if err := w.updateFrame(); err != nil {
+				w.setErr(err)
+				procDestroyWindow.Call(uintptr(w.hwnd))
+				return
+			}
+			procInvalidateRect.Call(uintptr(w.hwnd), 0, 0)
+		}
+	}
+}
+
 func (w *nativeWindow) updateFrame() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	pixels, err := w.source.NextBGRA(w.pixels)
 	if err != nil {
 		return err
@@ -217,6 +229,8 @@ func (w *nativeWindow) updateFrame() error {
 func (w *nativeWindow) paint(hwnd uintptr) {
 	var ps paintStruct
 	hdc, _, _ := procBeginPaint.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if hdc != 0 && len(w.pixels) > 0 {
 		bmi := bitmapInfo{
 			Header: bitmapInfoHeader{
@@ -239,6 +253,18 @@ func (w *nativeWindow) paint(hwnd uintptr) {
 		)
 	}
 	procEndPaint.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
+}
+
+func (w *nativeWindow) setErr(err error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.err = err
+}
+
+func (w *nativeWindow) getErr() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.err
 }
 
 func beginTimerResolution() func() {
