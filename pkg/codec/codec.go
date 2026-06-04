@@ -32,6 +32,8 @@ type Encoder struct {
 	colorRecognizer  *colorpkg.Recognizer
 	cellSize         int // cell 的屏幕像素大小 (4 * B)
 	gridSize         int // Q 参数，grid 的大小
+	templateMasks    [symbol.NumSymbols][64]bool
+	templatesReady   [symbol.NumSymbols]bool
 }
 
 // NewEncoder 创建编码器
@@ -40,12 +42,14 @@ type Encoder struct {
 // cellSize: cell 的屏幕像素大小（例如 8 表示 8x8 像素）
 // gridSize: grid 大小（例如 50 表示 50x50 cells）
 func NewEncoder(symbolRecognizer *symbol.Recognizer, colorRecognizer *colorpkg.Recognizer, cellSize, gridSize int) *Encoder {
-	return &Encoder{
+	e := &Encoder{
 		symbolRecognizer: symbolRecognizer,
 		colorRecognizer:  colorRecognizer,
 		cellSize:         cellSize,
 		gridSize:         gridSize,
 	}
+	e.templateMasks, e.templatesReady = buildTemplateMasks(symbolRecognizer)
+	return e
 }
 
 // Encode 将数据编码为二维码图像
@@ -160,7 +164,7 @@ func (e *Encoder) drawCell(img *image.RGBA, x, y int, cell Cell) {
 
 			// 如果模板 hash 位是前景，使用指定颜色；否则使用黑色背景。
 			var finalColor color.RGBA
-			if templateForeground(template, srcX, srcY) {
+			if e.templateForeground(cell.Shape, template, srcX, srcY) {
 				finalColor = cellColor
 			} else {
 				finalColor = color.RGBA{R: 0, G: 0, B: 0, A: 255}
@@ -177,16 +181,20 @@ type Decoder struct {
 	colorRecognizer  *colorpkg.Recognizer
 	cellSize         int
 	gridSize         int
+	templateMasks    [symbol.NumSymbols][64]bool
+	templatesReady   [symbol.NumSymbols]bool
 }
 
 // NewDecoder 创建解码器
 func NewDecoder(symbolRecognizer *symbol.Recognizer, colorRecognizer *colorpkg.Recognizer, cellSize, gridSize int) *Decoder {
-	return &Decoder{
+	d := &Decoder{
 		symbolRecognizer: symbolRecognizer,
 		colorRecognizer:  colorRecognizer,
 		cellSize:         cellSize,
 		gridSize:         gridSize,
 	}
+	d.templateMasks, d.templatesReady = buildTemplateMasks(symbolRecognizer)
+	return d
 }
 
 // Decode 解码二维码图像
@@ -245,7 +253,7 @@ func (d *Decoder) recognizeCellColor(cellImg image.Image, shapeID symbol.SymbolI
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			tx := (x - bounds.Min.X) * 8 / bounds.Dx()
 			ty := (y - bounds.Min.Y) * 8 / bounds.Dy()
-			if !templateForeground(template, tx, ty) {
+			if !d.templateForeground(shapeID, template, tx, ty) {
 				continue
 			}
 
@@ -270,6 +278,41 @@ func (d *Decoder) recognizeCellColor(cellImg image.Image, shapeID symbol.SymbolI
 	}
 	colorID, _ := d.colorRecognizer.RecognizeColor(avg)
 	return colorID
+}
+
+func (e *Encoder) templateForeground(shapeID symbol.SymbolID, template *image.Gray, x, y int) bool {
+	if shapeID < symbol.NumSymbols && e.templatesReady[shapeID] {
+		return e.templateMasks[shapeID][y*8+x]
+	}
+	return templateForeground(template, x, y)
+}
+
+func (d *Decoder) templateForeground(shapeID symbol.SymbolID, template *image.Gray, x, y int) bool {
+	if shapeID < symbol.NumSymbols && d.templatesReady[shapeID] {
+		return d.templateMasks[shapeID][y*8+x]
+	}
+	return templateForeground(template, x, y)
+}
+
+func buildTemplateMasks(rec *symbol.Recognizer) ([symbol.NumSymbols][64]bool, [symbol.NumSymbols]bool) {
+	var masks [symbol.NumSymbols][64]bool
+	var ready [symbol.NumSymbols]bool
+
+	for id := symbol.SymbolID(0); id < symbol.NumSymbols; id++ {
+		template, err := rec.GetTemplate(id)
+		if err != nil {
+			continue
+		}
+		avg := templateAverageGray(template)
+		for y := 0; y < 8; y++ {
+			for x := 0; x < 8; x++ {
+				masks[id][y*8+x] = template.GrayAt(x, y).Y > avg
+			}
+		}
+		ready[id] = true
+	}
+
+	return masks, ready
 }
 
 func templateForeground(template *image.Gray, x, y int) bool {
