@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/autocambar/autocambar/pkg/codec"
-	colorpkg "github.com/autocambar/autocambar/pkg/color"
 	"github.com/autocambar/autocambar/pkg/fountain"
 	"github.com/kbinani/screenshot"
 )
@@ -24,6 +23,7 @@ type ScreenEncodeConfig struct {
 	BlockSize  int
 	ECCPercent int
 	NoZstd     bool
+	ColorBits  int
 	Region     string
 	FPS        int
 	Addr       string
@@ -38,6 +38,7 @@ type ScreenDecodeConfig struct {
 	SymbolDir  string
 	BlockSize  int
 	ECCPercent int
+	ColorBits  int
 	Region     string
 	FPS        int
 	Timeout    time.Duration
@@ -60,8 +61,9 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 	if err := validateGridScale(cfg.GridSize, cfg.Scale); err != nil {
 		return nil, err
 	}
+	colorBits := normalizeColorBits(cfg.ColorBits)
 
-	payloadCapacity, err := PayloadCapacityBytesWithECC(cfg.GridSize, cfg.ECCPercent)
+	payloadCapacity, err := PayloadCapacityBytesWithECCAndColorBits(cfg.GridSize, cfg.ECCPercent, colorBits)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +74,7 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 	if blockSize <= 0 || blockSize > payloadCapacity {
 		return nil, fmt.Errorf("block size %d exceeds frame payload capacity %d", blockSize, payloadCapacity)
 	}
-	packetCodec, err := NewFramePacketCodec(cfg.GridSize, cfg.ECCPercent, blockSize)
+	packetCodec, err := NewFramePacketCodecWithColorBits(cfg.GridSize, cfg.ECCPercent, blockSize, colorBits)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +93,14 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	codecEnc := codec.NewEncoder(symRec, colorpkg.NewRecognizer4Color(), CellSize(cfg.Scale), cfg.GridSize)
+	colorRec, err := colorRecognizerForBits(colorBits)
+	if err != nil {
+		return nil, err
+	}
+	codecEnc, err := codec.NewEncoderWithColorBits(symRec, colorRec, CellSize(cfg.Scale), cfg.GridSize, colorBits)
+	if err != nil {
+		return nil, err
+	}
 
 	imageSize := cfg.GridSize * CellSize(cfg.Scale)
 	rect, err := ResolveEncoderRegion(cfg.Region, imageSize, imageSize)
@@ -104,7 +113,7 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 		Scale:           cfg.Scale,
 		CellSize:        CellSize(cfg.Scale),
 		ImageSize:       imageSize,
-		FrameCapacity:   GridCapacityBytes(cfg.GridSize),
+		FrameCapacity:   GridCapacityBytesWithColorBits(cfg.GridSize, colorBits),
 		PayloadCapacity: payloadCapacity,
 		ECCPercent:      cfg.ECCPercent,
 		ECCBytes:        packetCodec.ParitySize(),
@@ -116,6 +125,7 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 		BlockCount:      fountainEnc.BlockCount(),
 		MD5:             md5Hex,
 		Compression:     sourceCompression(compress),
+		ColorBits:       colorBits,
 	}
 	progress := newScreenEncoderProgress(cfg.Progress, result)
 	progress.startSummary()
@@ -147,8 +157,9 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 	if err := validateGridScale(cfg.GridSize, cfg.Scale); err != nil {
 		return err
 	}
+	colorBits := normalizeColorBits(cfg.ColorBits)
 
-	payloadCapacity, err := PayloadCapacityBytesWithECC(cfg.GridSize, cfg.ECCPercent)
+	payloadCapacity, err := PayloadCapacityBytesWithECCAndColorBits(cfg.GridSize, cfg.ECCPercent, colorBits)
 	if err != nil {
 		return err
 	}
@@ -159,7 +170,7 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 	if blockSize <= 0 || blockSize > payloadCapacity {
 		return fmt.Errorf("block size %d exceeds frame payload capacity %d", blockSize, payloadCapacity)
 	}
-	packetCodec, err := NewFramePacketCodec(cfg.GridSize, cfg.ECCPercent, blockSize)
+	packetCodec, err := NewFramePacketCodecWithColorBits(cfg.GridSize, cfg.ECCPercent, blockSize, colorBits)
 	if err != nil {
 		return err
 	}
@@ -168,7 +179,14 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 	if err != nil {
 		return err
 	}
-	codecDec := codec.NewDecoder(symRec, colorpkg.NewRecognizer4Color(), CellSize(cfg.Scale), cfg.GridSize)
+	colorRec, err := colorRecognizerForBits(colorBits)
+	if err != nil {
+		return err
+	}
+	codecDec, err := codec.NewDecoderWithColorBits(symRec, colorRec, CellSize(cfg.Scale), cfg.GridSize, colorBits)
+	if err != nil {
+		return err
+	}
 	var fountainDec *fountain.Decoder
 	blockCount := 0
 	fileSize := -1

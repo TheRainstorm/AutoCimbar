@@ -147,6 +147,37 @@ func TestEncodeDecodeRoundtrip(t *testing.T) {
 	}
 }
 
+func TestBytesToCellsRoundTrip16Color(t *testing.T) {
+	symRec, _ := createTestRecognizers(t)
+	colorRec := colorpkg.NewRecognizer16Color()
+	encoder, err := NewEncoderWithColorBits(symRec, colorRec, 8, 10, 4)
+	if err != nil {
+		t.Fatalf("NewEncoderWithColorBits failed: %v", err)
+	}
+	decoder, err := NewDecoderWithColorBits(symRec, colorRec, 8, 10, 4)
+	if err != nil {
+		t.Fatalf("NewDecoderWithColorBits failed: %v", err)
+	}
+
+	data := []byte{0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef}
+	cells, err := encoder.bytesToCells(data)
+	if err != nil {
+		t.Fatalf("bytesToCells failed: %v", err)
+	}
+	if len(cells) != len(data) {
+		t.Fatalf("cells len = %d, want %d", len(cells), len(data))
+	}
+	for i, cell := range cells {
+		if uint8(cell.Color) != data[i]>>4 || uint8(cell.Shape) != data[i]&0x0f {
+			t.Fatalf("cell %d = color %d shape %d, want color %d shape %d", i, cell.Color, cell.Shape, data[i]>>4, data[i]&0x0f)
+		}
+	}
+	decoded := decoder.cellsToBytes(cells)
+	if !bytes.Equal(decoded[:len(data)], data) {
+		t.Fatalf("decoded prefix = %x, want %x", decoded[:len(data)], data)
+	}
+}
+
 // TestEncodeTooLarge 测试数据过大的情况
 func TestEncodeTooLarge(t *testing.T) {
 	symRec, colorRec := createTestRecognizers(t)

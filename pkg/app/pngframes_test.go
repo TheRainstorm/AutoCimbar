@@ -112,6 +112,41 @@ func TestPNGFrameFountainRoundTripWithECC(t *testing.T) {
 	}
 }
 
+func TestPNGFrameFountainRoundTrip16Color(t *testing.T) {
+	dir := t.TempDir()
+	inputPath := filepath.Join(dir, "input.bin")
+	outputPath := filepath.Join(dir, "output.bin")
+	frameDir := filepath.Join(dir, "frames")
+
+	input := deterministicBytes(8192)
+	if err := os.WriteFile(inputPath, input, 0644); err != nil {
+		t.Fatalf("write input: %v", err)
+	}
+
+	result, err := EncodeFileToPNGFramesWithOptions(inputPath, frameDir, 50, 1, testSymbolDir(t), 10, 0, 3, true, 4)
+	if err != nil {
+		t.Fatalf("EncodeFileToPNGFramesWithOptions failed: %v", err)
+	}
+	if result.ColorBits != 4 {
+		t.Fatalf("ColorBits = %d, want 4", result.ColorBits)
+	}
+	if result.FrameCapacity != GridCapacityBytesWithColorBits(50, 4) {
+		t.Fatalf("FrameCapacity = %d, want %d", result.FrameCapacity, GridCapacityBytesWithColorBits(50, 4))
+	}
+
+	if err := DecodePNGFramesToFileWithColorBits(frameDir, outputPath, 50, 1, testSymbolDir(t), 0, 3, 4); err != nil {
+		t.Fatalf("DecodePNGFramesToFileWithColorBits failed: %v", err)
+	}
+
+	output, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	if !bytes.Equal(output, input) {
+		t.Fatal("decoded output differs from input")
+	}
+}
+
 func deterministicBytes(size int) []byte {
 	data := make([]byte, size)
 	var x uint32 = 0x12345678

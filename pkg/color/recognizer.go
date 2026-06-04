@@ -21,6 +21,8 @@ const (
 
 	// NumColors4 4 色模式的颜色数量
 	NumColors4 = 4
+	// NumColors16 16 色模式的颜色数量
+	NumColors16 = 16
 )
 
 // Color4Palette 4 色调色板（高对比度）
@@ -29,6 +31,26 @@ var Color4Palette = []color.RGBA{
 	{R: 255, G: 255, B: 255, A: 255}, // 白色
 	{R: 255, G: 0, B: 0, A: 255},     // 红色
 	{R: 0, G: 0, B: 255, A: 255},     // 蓝色
+}
+
+// Color16Palette 16 色调色板。前 4 项保持 4 色模式的 ID 顺序。
+var Color16Palette = []color.RGBA{
+	{R: 0, G: 255, B: 0, A: 255},
+	{R: 255, G: 255, B: 255, A: 255},
+	{R: 255, G: 0, B: 0, A: 255},
+	{R: 0, G: 0, B: 255, A: 255},
+	{R: 0, G: 255, B: 255, A: 255},
+	{R: 255, G: 255, B: 0, A: 255},
+	{R: 255, G: 0, B: 255, A: 255},
+	{R: 255, G: 128, B: 0, A: 255},
+	{R: 255, G: 128, B: 192, A: 255},
+	{R: 0, G: 160, B: 255, A: 255},
+	{R: 160, G: 80, B: 255, A: 255},
+	{R: 0, G: 255, B: 160, A: 255},
+	{R: 255, G: 192, B: 0, A: 255},
+	{R: 128, G: 224, B: 255, A: 255},
+	{R: 255, G: 64, B: 96, A: 255},
+	{R: 192, G: 192, B: 255, A: 255},
 }
 
 // Recognizer 颜色识别器
@@ -47,17 +69,29 @@ type LABColor struct {
 
 // NewRecognizer4Color 创建 4 色识别器
 func NewRecognizer4Color() *Recognizer {
+	return NewRecognizer(Color4Palette)
+}
+
+func NewRecognizer16Color() *Recognizer {
+	return NewRecognizer(Color16Palette)
+}
+
+func NewRecognizer(palette []color.RGBA) *Recognizer {
+	referenceRGB := append([]color.RGBA(nil), palette...)
 	r := &Recognizer{
-		referenceRGB: Color4Palette,
-		referenceLAB: make([]LABColor, NumColors4),
+		referenceRGB: referenceRGB,
+		referenceLAB: make([]LABColor, len(referenceRGB)),
 	}
 
-	// 预计算 LAB 颜色
-	for i, c := range Color4Palette {
+	for i, c := range referenceRGB {
 		r.referenceLAB[i] = RGBToLAB(c)
 	}
 
 	return r
+}
+
+func (r *Recognizer) NumColors() int {
+	return len(r.referenceRGB)
 }
 
 // Recognize 识别颜色

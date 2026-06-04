@@ -16,11 +16,11 @@ type Cell struct {
 	Shape symbol.SymbolID
 }
 
-// CellBits 每个 cell 的总位数
+// CellBits 每个 cell 的默认总位数
 // 4 色 (2 bits) + 16 形状 (4 bits) = 6 bits
 const CellBits = 6
 
-// ColorBits 颜色位数 (4 色 = 2 bits)
+// ColorBits 默认颜色位数 (4 色 = 2 bits)
 const ColorBits = 2
 
 // ShapeBits 形状位数 (16 种形状 = 4 bits)
@@ -32,10 +32,13 @@ type Encoder struct {
 	colorRecognizer  *colorpkg.Recognizer
 	cellSize         int // cell 的屏幕像素大小 (4 * B)
 	gridSize         int // Q 参数，grid 的大小
+	colorBits        int
+	cellBits         int
+	colorMask        uint8
 	templateMasks    [symbol.NumSymbols][64]bool
 	templatesReady   [symbol.NumSymbols]bool
-	tileCache        [4][symbol.NumSymbols][]byte
-	tileCacheBGRA    [4][symbol.NumSymbols][]byte
+	tileCache        [][]byte
+	tileCacheBGRA    [][]byte
 }
 
 // NewEncoder 创建编码器
@@ -44,15 +47,29 @@ type Encoder struct {
 // cellSize: cell 的屏幕像素大小（例如 8 表示 8x8 像素）
 // gridSize: grid 大小（例如 50 表示 50x50 cells）
 func NewEncoder(symbolRecognizer *symbol.Recognizer, colorRecognizer *colorpkg.Recognizer, cellSize, gridSize int) *Encoder {
+	enc, err := NewEncoderWithColorBits(symbolRecognizer, colorRecognizer, cellSize, gridSize, ColorBits)
+	if err != nil {
+		panic(err)
+	}
+	return enc
+}
+
+func NewEncoderWithColorBits(symbolRecognizer *symbol.Recognizer, colorRecognizer *colorpkg.Recognizer, cellSize, gridSize int, colorBits int) (*Encoder, error) {
+	if err := validateColorBits(colorRecognizer, colorBits); err != nil {
+		return nil, err
+	}
 	e := &Encoder{
 		symbolRecognizer: symbolRecognizer,
 		colorRecognizer:  colorRecognizer,
 		cellSize:         cellSize,
 		gridSize:         gridSize,
+		colorBits:        colorBits,
+		cellBits:         ShapeBits + colorBits,
+		colorMask:        uint8((1 << colorBits) - 1),
 	}
 	e.templateMasks, e.templatesReady = buildTemplateMasks(symbolRecognizer)
 	e.buildTileCache()
-	return e
+	return e, nil
 }
 
 // Encode 将数据编码为二维码图像
@@ -77,7 +94,7 @@ func (e *Encoder) EncodeBGRA(data []byte, dst []byte) ([]byte, error) {
 
 func (e *Encoder) encodedCellCount(data []byte) (int, error) {
 	totalBits := len(data) * 8
-	numCells := (totalBits + CellBits - 1) / CellBits
+	numCells := (totalBits + e.cellBits - 1) / e.cellBits
 
 	maxCells := e.gridSize * e.gridSize
 	if numCells > maxCells {
@@ -90,7 +107,7 @@ func (e *Encoder) encodedCellCount(data []byte) (int, error) {
 func (e *Encoder) bytesToCells(data []byte) ([]Cell, error) {
 	// 计算需要多少个 cells
 	totalBits := len(data) * 8
-	numCells := (totalBits + CellBits - 1) / CellBits
+	numCells := (totalBits + e.cellBits - 1) / e.cellBits
 
 	// 检查是否超出 grid 容量
 	maxCells := e.gridSize * e.gridSize
@@ -102,11 +119,11 @@ func (e *Encoder) bytesToCells(data []byte) ([]Cell, error) {
 
 	bitIndex := 0
 	for i := 0; i < numCells; i++ {
-		// 读取 6 bits（从左到右）
+		// 读取一个 cell 的 bits（从左到右）
 		var bits uint8 = 0
 		bitsRead := 0
 
-		for j := 0; j < CellBits && bitIndex < len(data)*8; j++ {
+		for j := 0; j < e.cellBits && bitIndex < len(data)*8; j++ {
 			byteIndex := bitIndex / 8
 			bitOffset := 7 - (bitIndex % 8)
 
@@ -117,14 +134,11 @@ func (e *Encoder) bytesToCells(data []byte) ([]Cell, error) {
 			bitsRead++
 		}
 
-		// 如果不足 6 bits，左移补齐
-		if bitsRead < CellBits {
-			bits <<= (CellBits - bitsRead)
+		if bitsRead < e.cellBits {
+			bits <<= (e.cellBits - bitsRead)
 		}
 
-		// 拆分为颜色和形状
-		// 高 2 bits = 颜色，低 4 bits = 形状
-		colorID := colorpkg.ColorID((bits >> ShapeBits) & 0x03)
+		colorID := colorpkg.ColorID((bits >> ShapeBits) & e.colorMask)
 		shapeID := symbol.SymbolID(bits & 0x0F)
 
 		cells[i] = Cell{
@@ -164,10 +178,10 @@ func (e *Encoder) renderData(data []byte, numCells int) *image.RGBA {
 	}
 
 	for i := 0; i < numCells; i++ {
-		bits := readCellBits(data, i)
+		bits := readCellBits(data, i, e.cellBits)
 		colorID := bits >> ShapeBits
 		shapeID := bits & 0x0f
-		tile := e.tileCache[colorID][shapeID]
+		tile := e.tileCache[int(colorID)*symbol.NumSymbols+int(shapeID)]
 		cellX := i % e.gridSize
 		cellY := i / e.gridSize
 		copyTileRGBA(img.Pix, img.Stride, cellX*e.cellSize*4, cellY*e.cellSize, e.cellSize, tile)
@@ -192,10 +206,10 @@ func (e *Encoder) renderDataBGRA(data []byte, numCells int, dst []byte) []byte {
 
 	stride := imageSize * 4
 	for i := 0; i < numCells; i++ {
-		bits := readCellBits(data, i)
+		bits := readCellBits(data, i, e.cellBits)
 		colorID := bits >> ShapeBits
 		shapeID := bits & 0x0f
-		tile := e.tileCacheBGRA[colorID][shapeID]
+		tile := e.tileCacheBGRA[int(colorID)*symbol.NumSymbols+int(shapeID)]
 		cellX := i % e.gridSize
 		cellY := i / e.gridSize
 		copyTileRGBA(dst, stride, cellX*e.cellSize*4, cellY*e.cellSize, e.cellSize, tile)
@@ -205,12 +219,16 @@ func (e *Encoder) renderDataBGRA(data []byte, numCells int, dst []byte) []byte {
 }
 
 func (e *Encoder) buildTileCache() {
-	for colorID := 0; colorID < 4; colorID++ {
+	colorCount := 1 << e.colorBits
+	e.tileCache = make([][]byte, colorCount*symbol.NumSymbols)
+	e.tileCacheBGRA = make([][]byte, colorCount*symbol.NumSymbols)
+	for colorID := 0; colorID < colorCount; colorID++ {
 		cellColor := e.colorRecognizer.GetColor(colorpkg.ColorID(colorID))
 		for shapeID := 0; shapeID < symbol.NumSymbols; shapeID++ {
 			tile := e.buildTile(color.RGBA(cellColor), symbol.SymbolID(shapeID))
-			e.tileCache[colorID][shapeID] = tile
-			e.tileCacheBGRA[colorID][shapeID] = rgbaTileToBGRA(tile)
+			index := colorID*symbol.NumSymbols + shapeID
+			e.tileCache[index] = tile
+			e.tileCacheBGRA[index] = rgbaTileToBGRA(tile)
 		}
 	}
 }
@@ -240,8 +258,8 @@ func (e *Encoder) buildTile(cellColor color.RGBA, shapeID symbol.SymbolID) []byt
 	return tile
 }
 
-func readCellBits(data []byte, cellIndex int) uint8 {
-	bitIndex := cellIndex * CellBits
+func readCellBits(data []byte, cellIndex int, cellBits int) uint8 {
+	bitIndex := cellIndex * cellBits
 	byteIndex := bitIndex / 8
 	bitOffset := bitIndex % 8
 
@@ -252,7 +270,8 @@ func readCellBits(data []byte, cellIndex int) uint8 {
 		}
 		v |= uint32(data[byteIndex+i]) << uint(16-8*i)
 	}
-	return uint8((v >> uint(24-bitOffset-CellBits)) & 0x3f)
+	mask := uint32((1 << cellBits) - 1)
+	return uint8((v >> uint(24-bitOffset-cellBits)) & mask)
 }
 
 func copyTileRGBA(dst []byte, stride int, xByte int, y int, cellSize int, tile []byte) {
@@ -325,6 +344,9 @@ type Decoder struct {
 	colorRecognizer  *colorpkg.Recognizer
 	cellSize         int
 	gridSize         int
+	colorBits        int
+	cellBits         int
+	colorMask        uint8
 	templateMasks    [symbol.NumSymbols][64]bool
 	templatesReady   [symbol.NumSymbols]bool
 	foregroundPixels [symbol.NumSymbols][]image.Point
@@ -332,15 +354,29 @@ type Decoder struct {
 
 // NewDecoder 创建解码器
 func NewDecoder(symbolRecognizer *symbol.Recognizer, colorRecognizer *colorpkg.Recognizer, cellSize, gridSize int) *Decoder {
+	dec, err := NewDecoderWithColorBits(symbolRecognizer, colorRecognizer, cellSize, gridSize, ColorBits)
+	if err != nil {
+		panic(err)
+	}
+	return dec
+}
+
+func NewDecoderWithColorBits(symbolRecognizer *symbol.Recognizer, colorRecognizer *colorpkg.Recognizer, cellSize, gridSize int, colorBits int) (*Decoder, error) {
+	if err := validateColorBits(colorRecognizer, colorBits); err != nil {
+		return nil, err
+	}
 	d := &Decoder{
 		symbolRecognizer: symbolRecognizer,
 		colorRecognizer:  colorRecognizer,
 		cellSize:         cellSize,
 		gridSize:         gridSize,
+		colorBits:        colorBits,
+		cellBits:         ShapeBits + colorBits,
+		colorMask:        uint8((1 << colorBits) - 1),
 	}
 	d.templateMasks, d.templatesReady = buildTemplateMasks(symbolRecognizer)
 	d.buildForegroundPixels()
-	return d
+	return d, nil
 }
 
 // Decode 解码二维码图像
@@ -352,7 +388,7 @@ func (d *Decoder) Decode(img image.Image) ([]byte, error) {
 
 func (d *Decoder) DecodeInto(img image.Image, dst []byte) ([]byte, error) {
 	numCells := d.gridSize * d.gridSize
-	totalBits := numCells * CellBits
+	totalBits := numCells * d.cellBits
 	numBytes := (totalBits + 7) / 8
 	if cap(dst) < numBytes {
 		dst = make([]byte, numBytes)
@@ -380,7 +416,7 @@ func (d *Decoder) DecodeInto(img image.Image, dst []byte) ([]byte, error) {
 		hash := d.cellHash(img, x, y)
 		shapeID, _ := d.symbolRecognizer.RecognizeHash(hash)
 		colorID := d.recognizeCellColorAt(img, x, y, shapeID)
-		writeCellBits(dst, i, (uint8(colorID)<<ShapeBits)|uint8(shapeID))
+		writeCellBits(dst, i, d.cellBits, (uint8(colorID&colorpkg.ColorID(d.colorMask))<<ShapeBits)|uint8(shapeID))
 	}
 
 	return dst, nil
@@ -400,7 +436,7 @@ func (d *Decoder) DecodeBGRAInto(pix []byte, width int, height int, stride int, 
 	}
 
 	numCells := d.gridSize * d.gridSize
-	totalBits := numCells * CellBits
+	totalBits := numCells * d.cellBits
 	numBytes := (totalBits + 7) / 8
 	if cap(dst) < numBytes {
 		dst = make([]byte, numBytes)
@@ -421,7 +457,7 @@ func (d *Decoder) decodeRGBAInto(img *image.RGBA, bounds image.Rectangle, numCel
 		hash := d.cellHashRGBA(img, x, y)
 		shapeID, _ := d.symbolRecognizer.RecognizeHash(hash)
 		colorID := d.recognizeCellColorRGBA(img, x, y, shapeID)
-		writeCellBits(dst, i, (uint8(colorID)<<ShapeBits)|uint8(shapeID))
+		writeCellBits(dst, i, d.cellBits, (uint8(colorID&colorpkg.ColorID(d.colorMask))<<ShapeBits)|uint8(shapeID))
 	}
 }
 
@@ -433,14 +469,14 @@ func (d *Decoder) decodeBGRAInto(pix []byte, stride int, numCells int, dst []byt
 		hash := d.cellHashBGRA(pix, stride, x, y)
 		shapeID, _ := d.symbolRecognizer.RecognizeHash(hash)
 		colorID := d.recognizeCellColorBGRA(pix, stride, x, y, shapeID)
-		writeCellBits(dst, i, (uint8(colorID)<<ShapeBits)|uint8(shapeID))
+		writeCellBits(dst, i, d.cellBits, (uint8(colorID&colorpkg.ColorID(d.colorMask))<<ShapeBits)|uint8(shapeID))
 	}
 }
 
-func writeCellBits(dst []byte, cellIndex int, bits uint8) {
-	bitIndex := cellIndex * CellBits
-	for j := 0; j < CellBits && bitIndex < len(dst)*8; j++ {
-		bit := (bits >> (CellBits - 1 - j)) & 1
+func writeCellBits(dst []byte, cellIndex int, cellBits int, bits uint8) {
+	bitIndex := cellIndex * cellBits
+	for j := 0; j < cellBits && bitIndex < len(dst)*8; j++ {
+		bit := (bits >> (cellBits - 1 - j)) & 1
 		if bit != 0 {
 			byteIndex := bitIndex / 8
 			bitOffset := 7 - (bitIndex % 8)
@@ -832,20 +868,17 @@ func fastRGBAt(img image.Image, x, y int) (uint8, uint8, uint8) {
 // cellsToBytes 将 cells 转换为字节数组
 func (d *Decoder) cellsToBytes(cells []Cell) []byte {
 	// 计算总位数
-	totalBits := len(cells) * CellBits
+	totalBits := len(cells) * d.cellBits
 	numBytes := (totalBits + 7) / 8
 
 	data := make([]byte, numBytes)
 
 	bitIndex := 0
 	for _, cell := range cells {
-		// 组合颜色和形状为 6 bits
-		// 高 2 bits = 颜色，低 4 bits = 形状
-		bits := (uint8(cell.Color) << ShapeBits) | uint8(cell.Shape)
+		bits := (uint8(cell.Color&colorpkg.ColorID(d.colorMask)) << ShapeBits) | uint8(cell.Shape)
 
-		// 写入 6 bits
-		for j := 0; j < CellBits && bitIndex < len(data)*8; j++ {
-			bit := (bits >> (CellBits - 1 - j)) & 1
+		for j := 0; j < d.cellBits && bitIndex < len(data)*8; j++ {
+			bit := (bits >> (d.cellBits - 1 - j)) & 1
 
 			byteIndex := bitIndex / 8
 			bitOffset := 7 - (bitIndex % 8)
@@ -859,6 +892,20 @@ func (d *Decoder) cellsToBytes(cells []Cell) []byte {
 	}
 
 	return data
+}
+
+func validateColorBits(colorRecognizer *colorpkg.Recognizer, colorBits int) error {
+	if colorBits != 2 && colorBits != 4 {
+		return fmt.Errorf("color bits must be 2 or 4, got %d", colorBits)
+	}
+	if colorRecognizer == nil {
+		return fmt.Errorf("color recognizer is nil")
+	}
+	needColors := 1 << colorBits
+	if colorRecognizer.NumColors() < needColors {
+		return fmt.Errorf("color recognizer has %d colors, need %d for %d color bits", colorRecognizer.NumColors(), needColors, colorBits)
+	}
+	return nil
 }
 
 // extractSubImage 提取子图像

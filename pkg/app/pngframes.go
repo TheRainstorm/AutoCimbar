@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/autocambar/autocambar/pkg/codec"
-	colorpkg "github.com/autocambar/autocambar/pkg/color"
 	"github.com/autocambar/autocambar/pkg/fountain"
 )
 
@@ -32,13 +31,15 @@ type EncodeResult struct {
 	BlockCount      int
 	MD5             string
 	Compression     uint32
+	ColorBits       int
 }
 
 func EncodeFileToPNGFrames(inputPath string, outputDir string, gridSize int, scale int, symbolDir string, redundancyPercent int, blockSize int, eccPercent int) (*EncodeResult, error) {
-	return EncodeFileToPNGFramesWithOptions(inputPath, outputDir, gridSize, scale, symbolDir, redundancyPercent, blockSize, eccPercent, true)
+	return EncodeFileToPNGFramesWithOptions(inputPath, outputDir, gridSize, scale, symbolDir, redundancyPercent, blockSize, eccPercent, true, codec.ColorBits)
 }
 
-func EncodeFileToPNGFramesWithOptions(inputPath string, outputDir string, gridSize int, scale int, symbolDir string, redundancyPercent int, blockSize int, eccPercent int, compress bool) (*EncodeResult, error) {
+func EncodeFileToPNGFramesWithOptions(inputPath string, outputDir string, gridSize int, scale int, symbolDir string, redundancyPercent int, blockSize int, eccPercent int, compress bool, colorBits int) (*EncodeResult, error) {
+	colorBits = normalizeColorBits(colorBits)
 	if gridSize <= 0 {
 		return nil, fmt.Errorf("Q must be > 0")
 	}
@@ -49,7 +50,7 @@ func EncodeFileToPNGFramesWithOptions(inputPath string, outputDir string, gridSi
 		return nil, fmt.Errorf("redundancy must be >= 0")
 	}
 
-	payloadCapacity, err := PayloadCapacityBytesWithECC(gridSize, eccPercent)
+	payloadCapacity, err := PayloadCapacityBytesWithECCAndColorBits(gridSize, eccPercent, colorBits)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +63,7 @@ func EncodeFileToPNGFramesWithOptions(inputPath string, outputDir string, gridSi
 	if blockSize > payloadCapacity {
 		return nil, fmt.Errorf("block size %d exceeds frame payload capacity %d", blockSize, payloadCapacity)
 	}
-	packetCodec, err := NewFramePacketCodec(gridSize, eccPercent, blockSize)
+	packetCodec, err := NewFramePacketCodecWithColorBits(gridSize, eccPercent, blockSize, colorBits)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +81,14 @@ func EncodeFileToPNGFramesWithOptions(inputPath string, outputDir string, gridSi
 	if err != nil {
 		return nil, err
 	}
-	enc := codec.NewEncoder(symRec, colorpkg.NewRecognizer4Color(), CellSize(scale), gridSize)
+	colorRec, err := colorRecognizerForBits(colorBits)
+	if err != nil {
+		return nil, err
+	}
+	enc, err := codec.NewEncoderWithColorBits(symRec, colorRec, CellSize(scale), gridSize, colorBits)
+	if err != nil {
+		return nil, err
+	}
 
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return nil, fmt.Errorf("create output dir: %w", err)
@@ -133,7 +141,7 @@ func EncodeFileToPNGFramesWithOptions(inputPath string, outputDir string, gridSi
 		Scale:           scale,
 		CellSize:        CellSize(scale),
 		ImageSize:       imageSize,
-		FrameCapacity:   GridCapacityBytes(gridSize),
+		FrameCapacity:   GridCapacityBytesWithColorBits(gridSize, colorBits),
 		PayloadCapacity: payloadCapacity,
 		ECCPercent:      eccPercent,
 		ECCBytes:        packetCodec.ParitySize(),
@@ -145,10 +153,16 @@ func EncodeFileToPNGFramesWithOptions(inputPath string, outputDir string, gridSi
 		BlockCount:      fountainEnc.BlockCount(),
 		MD5:             md5Hex,
 		Compression:     sourceCompression(compress),
+		ColorBits:       colorBits,
 	}, nil
 }
 
 func DecodePNGFramesToFile(inputPath string, outputPath string, gridSize int, scale int, symbolDir string, blockSize int, eccPercent int) error {
+	return DecodePNGFramesToFileWithColorBits(inputPath, outputPath, gridSize, scale, symbolDir, blockSize, eccPercent, codec.ColorBits)
+}
+
+func DecodePNGFramesToFileWithColorBits(inputPath string, outputPath string, gridSize int, scale int, symbolDir string, blockSize int, eccPercent int, colorBits int) error {
+	colorBits = normalizeColorBits(colorBits)
 	if gridSize <= 0 {
 		return fmt.Errorf("Q must be > 0")
 	}
@@ -163,7 +177,7 @@ func DecodePNGFramesToFile(inputPath string, outputPath string, gridSize int, sc
 	if len(paths) == 0 {
 		return fmt.Errorf("no PNG frames found in %s", inputPath)
 	}
-	payloadCapacity, err := PayloadCapacityBytesWithECC(gridSize, eccPercent)
+	payloadCapacity, err := PayloadCapacityBytesWithECCAndColorBits(gridSize, eccPercent, colorBits)
 	if err != nil {
 		return err
 	}
@@ -176,7 +190,7 @@ func DecodePNGFramesToFile(inputPath string, outputPath string, gridSize int, sc
 	if blockSize > payloadCapacity {
 		return fmt.Errorf("block size %d exceeds frame payload capacity %d", blockSize, payloadCapacity)
 	}
-	packetCodec, err := NewFramePacketCodec(gridSize, eccPercent, blockSize)
+	packetCodec, err := NewFramePacketCodecWithColorBits(gridSize, eccPercent, blockSize, colorBits)
 	if err != nil {
 		return err
 	}
@@ -184,7 +198,14 @@ func DecodePNGFramesToFile(inputPath string, outputPath string, gridSize int, sc
 	if err != nil {
 		return err
 	}
-	codecDec := codec.NewDecoder(symRec, colorpkg.NewRecognizer4Color(), CellSize(scale), gridSize)
+	colorRec, err := colorRecognizerForBits(colorBits)
+	if err != nil {
+		return err
+	}
+	codecDec, err := codec.NewDecoderWithColorBits(symRec, colorRec, CellSize(scale), gridSize, colorBits)
+	if err != nil {
+		return err
+	}
 	var fountainDec *fountain.Decoder
 	blockCount := 0
 	fileSize := -1

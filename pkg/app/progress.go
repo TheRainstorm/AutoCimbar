@@ -21,6 +21,7 @@ type screenEncoderProgress struct {
 	blockCount     int
 	frameCapacity  int
 	payloadBytes   int
+	colorBits      int
 	eccPercent     int
 	eccBytes       int
 	packetBytes    int
@@ -49,6 +50,7 @@ func newScreenEncoderProgress(out io.Writer, result *EncodeResult) *screenEncode
 		blockCount:     result.BlockCount,
 		frameCapacity:  result.FrameCapacity,
 		payloadBytes:   result.PayloadCapacity,
+		colorBits:      result.ColorBits,
 		eccPercent:     result.ECCPercent,
 		eccBytes:       result.ECCBytes,
 		packetBytes:    result.PacketBytes,
@@ -70,7 +72,7 @@ func (p *screenEncoderProgress) startSummary() {
 	}
 	fmt.Fprintf(p.out, "file=%d bytes source_payload=%d bytes compression=%s transfer=%d bytes md5=%s source_blocks=%d\n",
 		p.fileSize, p.compressedSize, SourceCompressionName(p.compression), p.transferSize, p.md5, p.blockCount)
-	fmt.Fprintf(p.out, "per-frame capacity: codec=%d bytes (%d bits), actual_packet=%d bytes\n", p.frameCapacity, p.frameCapacity*8, packetBytes)
+	fmt.Fprintf(p.out, "per-frame capacity: codec=%d bytes (%d bits), color_bits=%d, actual_packet=%d bytes\n", p.frameCapacity, p.frameCapacity*8, p.colorBits, packetBytes)
 	fmt.Fprintf(p.out, "  header=%d bytes: magic=ACB1 file_size=8 frame_id=4\n", FrameHeaderSize)
 	fmt.Fprintf(p.out, "  data_area=%d bytes after header\n", p.payloadBytes)
 	fmt.Fprintf(p.out, "  fountain_block=%d bytes: one encoded source block; last source block is zero-padded\n", p.blockSize)
