@@ -172,6 +172,7 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 	defer progress.finishLine()
 
 	nextCapture := time.Now()
+	var packetBuf []byte
 	for time.Now().Before(deadline) {
 		if now := time.Now(); now.Before(nextCapture) {
 			time.Sleep(time.Until(nextCapture))
@@ -185,11 +186,12 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 			return fmt.Errorf("capture screen: %w", err)
 		}
 		progress.noteCaptured()
-		packet, err := codecDec.Decode(img)
+		packet, err := codecDec.DecodeInto(img, packetBuf)
 		if err != nil {
 			progress.noteInvalid()
 			continue
 		}
+		packetBuf = packet
 		frame, err := ParsePacket(packet, blockSize)
 		if err != nil {
 			progress.noteInvalid()

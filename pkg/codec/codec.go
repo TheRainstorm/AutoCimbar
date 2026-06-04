@@ -347,15 +347,77 @@ func NewDecoder(symbolRecognizer *symbol.Recognizer, colorRecognizer *colorpkg.R
 // img: 二维码图像
 // 返回：解码后的字节数组
 func (d *Decoder) Decode(img image.Image) ([]byte, error) {
-	// 1. 提取所有 cells
+	return d.DecodeInto(img, nil)
+}
+
+func (d *Decoder) DecodeInto(img image.Image, dst []byte) ([]byte, error) {
+	numCells := d.gridSize * d.gridSize
+	totalBits := numCells * CellBits
+	numBytes := (totalBits + 7) / 8
+	if cap(dst) < numBytes {
+		dst = make([]byte, numBytes)
+	} else {
+		dst = dst[:numBytes]
+		clear(dst)
+	}
+
+	bounds := img.Bounds()
+	requiredW := d.gridSize * d.cellSize
+	requiredH := d.gridSize * d.cellSize
+	if bounds.Dx() < requiredW || bounds.Dy() < requiredH {
+		return nil, fmt.Errorf("image too small: got %dx%d, need at least %dx%d", bounds.Dx(), bounds.Dy(), requiredW, requiredH)
+	}
+
+	if rgba, ok := img.(*image.RGBA); ok {
+		d.decodeRGBAInto(rgba, bounds, numCells, dst)
+		return dst, nil
+	}
+
+	for i := 0; i < numCells; i++ {
+		x := bounds.Min.X + (i%d.gridSize)*d.cellSize
+		y := bounds.Min.Y + (i/d.gridSize)*d.cellSize
+
+		hash := d.cellHash(img, x, y)
+		shapeID, _ := d.symbolRecognizer.RecognizeHash(hash)
+		colorID := d.recognizeCellColorAt(img, x, y, shapeID)
+		writeCellBits(dst, i, (uint8(colorID)<<ShapeBits)|uint8(shapeID))
+	}
+
+	return dst, nil
+}
+
+func (d *Decoder) decodeRGBAInto(img *image.RGBA, bounds image.Rectangle, numCells int, dst []byte) {
+	for i := 0; i < numCells; i++ {
+		x := bounds.Min.X + (i%d.gridSize)*d.cellSize
+		y := bounds.Min.Y + (i/d.gridSize)*d.cellSize
+
+		hash := d.cellHashRGBA(img, x, y)
+		shapeID, _ := d.symbolRecognizer.RecognizeHash(hash)
+		colorID := d.recognizeCellColorRGBA(img, x, y, shapeID)
+		writeCellBits(dst, i, (uint8(colorID)<<ShapeBits)|uint8(shapeID))
+	}
+}
+
+func writeCellBits(dst []byte, cellIndex int, bits uint8) {
+	bitIndex := cellIndex * CellBits
+	for j := 0; j < CellBits && bitIndex < len(dst)*8; j++ {
+		bit := (bits >> (CellBits - 1 - j)) & 1
+		if bit != 0 {
+			byteIndex := bitIndex / 8
+			bitOffset := 7 - (bitIndex % 8)
+			dst[byteIndex] |= 1 << bitOffset
+		}
+		bitIndex++
+	}
+}
+
+func (d *Decoder) decodeViaCells(img image.Image) ([]byte, error) {
 	cells, err := d.extractCells(img)
 	if err != nil {
 		return nil, err
 	}
 
-	// 2. 将 cells 转换为字节数组
 	data := d.cellsToBytes(cells)
-
 	return data, nil
 }
 
