@@ -64,7 +64,8 @@ func EncodeFileToPNGFrames(inputPath string, outputDir string, gridSize int, sca
 	if err != nil {
 		return nil, fmt.Errorf("read input file: %w", err)
 	}
-	fountainEnc, err := fountain.NewEncoder(data, blockSize)
+	sourceData := BuildSourceData(data)
+	fountainEnc, err := fountain.NewEncoder(sourceData, blockSize)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +94,7 @@ func EncodeFileToPNGFrames(inputPath string, outputDir string, gridSize int, sca
 	var encodedPacketBuf []byte
 	for i := 0; i < totalFrames; i++ {
 		block := fountainEnc.Encode(uint32(i))
-		packetBuf = BuildPacketInto(packetBuf, len(data), block.FrameID, block.Data)
+		packetBuf = BuildPacketInto(packetBuf, len(sourceData), block.FrameID, block.Data)
 		encodedPacketBuf, err = packetCodec.EncodeInto(packetBuf, encodedPacketBuf)
 		if err != nil {
 			return nil, fmt.Errorf("ecc encode frame %d: %w", i, err)
@@ -214,7 +215,11 @@ func DecodePNGFramesToFile(inputPath string, outputPath string, gridSize int, sc
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(outputPath, result, 0644); err != nil {
+	source, err := ParseSourceData(result)
+	if err != nil {
+		return fmt.Errorf("verify decoded source: %w", err)
+	}
+	if err := os.WriteFile(outputPath, source.Payload, 0644); err != nil {
 		return fmt.Errorf("write output file: %w", err)
 	}
 	return nil

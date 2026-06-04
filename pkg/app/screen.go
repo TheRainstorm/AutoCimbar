@@ -81,7 +81,8 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read input file: %w", err)
 	}
-	fountainEnc, err := fountain.NewEncoder(data, blockSize)
+	sourceData := BuildSourceData(data)
+	fountainEnc, err := fountain.NewEncoder(sourceData, blockSize)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +121,7 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 	source := &screenFrameSource{
 		codecEnc:    codecEnc,
 		fountainEnc: fountainEnc,
-		fileSize:    len(data),
+		fileSize:    len(sourceData),
 		width:       imageSize,
 		height:      imageSize,
 		progress:    progress,
@@ -243,7 +244,11 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 			if err != nil {
 				return err
 			}
-			return os.WriteFile(cfg.OutputPath, result, 0644)
+			source, err := ParseSourceData(result)
+			if err != nil {
+				return fmt.Errorf("verify decoded source: %w", err)
+			}
+			return os.WriteFile(cfg.OutputPath, source.Payload, 0644)
 		}
 	}
 

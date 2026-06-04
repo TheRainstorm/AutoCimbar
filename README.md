@@ -94,6 +94,8 @@ Get-FileHash .\input.bin
 Get-FileHash .\output.bin
 ```
 
+decoder 也会在喷泉码恢复完成后校验内置的文件级 MD5；校验失败会报错，不会静默接受错误输出。
+
 ## Windows 屏幕传输
 
 ### 1. 发送端
@@ -210,7 +212,8 @@ go test ./...
 ## 当前限制
 
 - 当前喷泉码是纯 Go 线性 XOR 喷泉码，decoder 需要知道源块数量；实现方式是在每帧头携带文件大小，用于推导 `blockCount`。
-- 每帧头当前包含 `fileSize(8 bytes) + frameID(4 bytes)`，其余为喷泉编码块。
+- 每帧头当前包含 `fileSize(8 bytes) + frameID(4 bytes)`，其余为喷泉编码块；`fileSize` 指喷泉传输数据大小。
+- 原始文件会先加一个一次性源数据头，包含原始文件大小和 MD5，用于最终完整性校验；它不是每帧参数。
 - `-ecc` 是运行时约定参数，不写入帧头；开启后会减少每帧 fountain payload，并在单帧内添加交织后的 RS 校验字节。
 - Windows 屏幕模式使用 Win32 原生窗口；非 Windows 平台暂时使用 HTTP/浏览器 fallback。
 - 暂未实现 GPU 加速和真正的 Wirehair/Raptor 类喷泉码。

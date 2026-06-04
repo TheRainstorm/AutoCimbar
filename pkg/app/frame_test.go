@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"errors"
 	"testing"
 )
@@ -52,5 +53,30 @@ func TestBuildPacketIntoRoundTrip(t *testing.T) {
 		if got != payload[i] {
 			t.Fatalf("Payload[%d] = %d, want %d", i, got, payload[i])
 		}
+	}
+}
+
+func TestBuildParseSourceDataRoundTrip(t *testing.T) {
+	input := []byte("source payload")
+	source, err := ParseSourceData(BuildSourceData(input))
+	if err != nil {
+		t.Fatalf("ParseSourceData failed: %v", err)
+	}
+	if source.FileSize != len(input) {
+		t.Fatalf("FileSize = %d, want %d", source.FileSize, len(input))
+	}
+	if source.MD5 != BytesMD5Hex(input) {
+		t.Fatalf("MD5 = %s, want %s", source.MD5, BytesMD5Hex(input))
+	}
+	if !bytes.Equal(source.Payload, input) {
+		t.Fatal("payload differs from input")
+	}
+}
+
+func TestParseSourceDataRejectsMD5Mismatch(t *testing.T) {
+	sourceData := BuildSourceData([]byte("source payload"))
+	sourceData[len(sourceData)-1] ^= 0x01
+	if _, err := ParseSourceData(sourceData); err == nil {
+		t.Fatal("expected md5 mismatch error")
 	}
 }
