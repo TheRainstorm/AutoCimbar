@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"image"
 	"io"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -77,11 +76,10 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 		return nil, err
 	}
 
-	data, err := os.ReadFile(cfg.InputPath)
+	sourceData, fileSize, md5Hex, err := BuildSourceDataFromFile(cfg.InputPath)
 	if err != nil {
-		return nil, fmt.Errorf("read input file: %w", err)
+		return nil, err
 	}
-	sourceData := BuildSourceData(data)
 	fountainEnc, err := fountain.NewEncoder(sourceData, blockSize)
 	if err != nil {
 		return nil, err
@@ -109,10 +107,12 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 		ECCPercent:      cfg.ECCPercent,
 		ECCBytes:        packetCodec.ParitySize(),
 		PacketBytes:     packetCodec.EncodedSize(),
-		FileSize:        len(data),
+		FileSize:        fileSize,
+		CompressedSize:  len(sourceData) - SourceHeaderSize,
+		TransferSize:    len(sourceData),
 		BlockSize:       fountainEnc.BlockSize(),
 		BlockCount:      fountainEnc.BlockCount(),
-		MD5:             BytesMD5Hex(data),
+		MD5:             md5Hex,
 	}
 	progress := newScreenEncoderProgress(cfg.Progress, result)
 	progress.startSummary()
@@ -244,11 +244,10 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 			if err != nil {
 				return err
 			}
-			source, err := ParseSourceData(result)
-			if err != nil {
-				return fmt.Errorf("verify decoded source: %w", err)
+			if _, err := WriteSourceDataToFile(result, cfg.OutputPath); err != nil {
+				return fmt.Errorf("write decoded source: %w", err)
 			}
-			return os.WriteFile(cfg.OutputPath, source.Payload, 0644)
+			return nil
 		}
 	}
 

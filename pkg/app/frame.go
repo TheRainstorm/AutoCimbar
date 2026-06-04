@@ -1,7 +1,6 @@
 package app
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -10,10 +9,11 @@ import (
 )
 
 const (
-	FrameMagic       = uint32(0x41434231) // "ACB1"
-	FrameHeaderSize  = 16
-	SourceMagic      = uint32(0x41435331) // "ACS1"
-	SourceHeaderSize = 32
+	FrameMagic            = uint32(0x41434231) // "ACB1"
+	FrameHeaderSize       = 16
+	SourceMagic           = uint32(0x41435331) // "ACS1"
+	SourceHeaderSize      = 32
+	SourceCompressionZstd = uint32(1)
 )
 
 var ErrInvalidFrameMagic = errors.New("invalid frame magic")
@@ -21,12 +21,6 @@ var ErrInvalidFrameMagic = errors.New("invalid frame magic")
 type Frame struct {
 	FileSize int
 	FrameID  uint32
-	Payload  []byte
-}
-
-type SourceData struct {
-	FileSize int
-	MD5      string
 	Payload  []byte
 }
 
@@ -90,46 +84,6 @@ func blockCountForFile(fileSize int, blockSize int) int {
 		blockCount++
 	}
 	return blockCount
-}
-
-func BuildSourceData(data []byte) []byte {
-	out := make([]byte, SourceHeaderSize+len(data))
-	binary.BigEndian.PutUint32(out[0:4], SourceMagic)
-	binary.BigEndian.PutUint64(out[4:12], uint64(len(data)))
-	sum := BytesMD5(data)
-	copy(out[12:28], sum[:])
-	copy(out[SourceHeaderSize:], data)
-	return out
-}
-
-func ParseSourceData(data []byte) (*SourceData, error) {
-	if len(data) < SourceHeaderSize {
-		return nil, fmt.Errorf("source data too short: got %d, need %d", len(data), SourceHeaderSize)
-	}
-	magic := binary.BigEndian.Uint32(data[0:4])
-	if magic != SourceMagic {
-		return nil, fmt.Errorf("invalid source magic: got 0x%08x", magic)
-	}
-	fileSize := binary.BigEndian.Uint64(data[4:12])
-	if fileSize > uint64(^uint(0)>>1) {
-		return nil, fmt.Errorf("source file size too large: %d", fileSize)
-	}
-	payloadStart := SourceHeaderSize
-	payloadEnd := payloadStart + int(fileSize)
-	if payloadEnd > len(data) {
-		return nil, fmt.Errorf("source data truncated: got %d payload bytes, need %d", len(data)-payloadStart, fileSize)
-	}
-	payload := data[payloadStart:payloadEnd]
-	wantMD5 := data[12:28]
-	gotMD5 := BytesMD5(payload)
-	if !bytes.Equal(gotMD5[:], wantMD5) {
-		return nil, fmt.Errorf("source md5 mismatch: got %s, want %s", MD5Hex(gotMD5), MD5HexBytes(wantMD5))
-	}
-	return &SourceData{
-		FileSize: int(fileSize),
-		MD5:      MD5Hex(gotMD5),
-		Payload:  payload,
-	}, nil
 }
 
 func BuildPacket(fileSize int, frameID uint32, payload []byte) []byte {

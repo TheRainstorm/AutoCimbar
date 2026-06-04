@@ -26,6 +26,8 @@ type EncodeResult struct {
 	ECCBytes        int
 	PacketBytes     int
 	FileSize        int
+	CompressedSize  int
+	TransferSize    int
 	BlockSize       int
 	BlockCount      int
 	MD5             string
@@ -60,11 +62,10 @@ func EncodeFileToPNGFrames(inputPath string, outputDir string, gridSize int, sca
 		return nil, err
 	}
 
-	data, err := os.ReadFile(inputPath)
+	sourceData, fileSize, md5Hex, err := BuildSourceDataFromFile(inputPath)
 	if err != nil {
-		return nil, fmt.Errorf("read input file: %w", err)
+		return nil, err
 	}
-	sourceData := BuildSourceData(data)
 	fountainEnc, err := fountain.NewEncoder(sourceData, blockSize)
 	if err != nil {
 		return nil, err
@@ -132,10 +133,12 @@ func EncodeFileToPNGFrames(inputPath string, outputDir string, gridSize int, sca
 		ECCPercent:      eccPercent,
 		ECCBytes:        packetCodec.ParitySize(),
 		PacketBytes:     packetCodec.EncodedSize(),
-		FileSize:        len(data),
+		FileSize:        fileSize,
+		CompressedSize:  len(sourceData) - SourceHeaderSize,
+		TransferSize:    len(sourceData),
 		BlockSize:       fountainEnc.BlockSize(),
 		BlockCount:      fountainEnc.BlockCount(),
-		MD5:             BytesMD5Hex(data),
+		MD5:             md5Hex,
 	}, nil
 }
 
@@ -215,12 +218,8 @@ func DecodePNGFramesToFile(inputPath string, outputPath string, gridSize int, sc
 	if err != nil {
 		return err
 	}
-	source, err := ParseSourceData(result)
-	if err != nil {
-		return fmt.Errorf("verify decoded source: %w", err)
-	}
-	if err := os.WriteFile(outputPath, source.Payload, 0644); err != nil {
-		return fmt.Errorf("write output file: %w", err)
+	if _, err := WriteSourceDataToFile(result, outputPath); err != nil {
+		return fmt.Errorf("write decoded source: %w", err)
 	}
 	return nil
 }

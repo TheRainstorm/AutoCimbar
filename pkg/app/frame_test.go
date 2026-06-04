@@ -3,6 +3,8 @@ package app
 import (
 	"bytes"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -78,5 +80,28 @@ func TestParseSourceDataRejectsMD5Mismatch(t *testing.T) {
 	sourceData[len(sourceData)-1] ^= 0x01
 	if _, err := ParseSourceData(sourceData); err == nil {
 		t.Fatal("expected md5 mismatch error")
+	}
+}
+
+func TestWriteSourceDataToFileRoundTrip(t *testing.T) {
+	input := bytes.Repeat([]byte("compressible payload "), 128)
+	outputPath := filepath.Join(t.TempDir(), "output.bin")
+	if err := os.WriteFile(outputPath, []byte("old output"), 0644); err != nil {
+		t.Fatalf("write old output: %v", err)
+	}
+
+	source, err := WriteSourceDataToFile(BuildSourceData(input), outputPath)
+	if err != nil {
+		t.Fatalf("WriteSourceDataToFile failed: %v", err)
+	}
+	if source.MD5 != BytesMD5Hex(input) {
+		t.Fatalf("MD5 = %s, want %s", source.MD5, BytesMD5Hex(input))
+	}
+	output, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	if !bytes.Equal(output, input) {
+		t.Fatal("output differs from input")
 	}
 }

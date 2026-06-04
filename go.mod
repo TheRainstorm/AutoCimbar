@@ -4,7 +4,10 @@ go 1.24.0
 
 require (
 	github.com/kbinani/screenshot v0.0.0-20250624051815-089614a94018
+	github.com/klauspost/compress v1.18.6
 	github.com/klauspost/reedsolomon v1.12.4
+	github.com/lxn/win v0.0.0-20210218163916-a377121e959e
+	golang.org/x/sys v0.36.0
 )
 
 require (
@@ -12,6 +15,4 @@ require (
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/jezek/xgb v1.1.1 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.8 // indirect
-	github.com/lxn/win v0.0.0-20210218163916-a377121e959e // indirect
-	golang.org/x/sys v0.36.0 // indirect
 )

@@ -9,23 +9,25 @@ import (
 )
 
 type screenEncoderProgress struct {
-	out           io.Writer
-	start         time.Time
-	last          time.Time
-	fileSize      int
-	md5           string
-	blockSize     int
-	blockCount    int
-	frameCapacity int
-	payloadBytes  int
-	eccPercent    int
-	eccBytes      int
-	packetBytes   int
-	encoded       uint64
-	presented     uint64
-	lastEncoded   uint64
-	lastPresented uint64
-	mu            sync.Mutex
+	out            io.Writer
+	start          time.Time
+	last           time.Time
+	fileSize       int
+	md5            string
+	compressedSize int
+	transferSize   int
+	blockSize      int
+	blockCount     int
+	frameCapacity  int
+	payloadBytes   int
+	eccPercent     int
+	eccBytes       int
+	packetBytes    int
+	encoded        uint64
+	presented      uint64
+	lastEncoded    uint64
+	lastPresented  uint64
+	mu             sync.Mutex
 }
 
 func newScreenEncoderProgress(out io.Writer, result *EncodeResult) *screenEncoderProgress {
@@ -34,18 +36,20 @@ func newScreenEncoderProgress(out io.Writer, result *EncodeResult) *screenEncode
 	}
 	now := time.Now()
 	return &screenEncoderProgress{
-		out:           out,
-		start:         now,
-		last:          now,
-		fileSize:      result.FileSize,
-		md5:           result.MD5,
-		blockSize:     result.BlockSize,
-		blockCount:    result.BlockCount,
-		frameCapacity: result.FrameCapacity,
-		payloadBytes:  result.PayloadCapacity,
-		eccPercent:    result.ECCPercent,
-		eccBytes:      result.ECCBytes,
-		packetBytes:   result.PacketBytes,
+		out:            out,
+		start:          now,
+		last:           now,
+		fileSize:       result.FileSize,
+		md5:            result.MD5,
+		compressedSize: result.CompressedSize,
+		transferSize:   result.TransferSize,
+		blockSize:      result.BlockSize,
+		blockCount:     result.BlockCount,
+		frameCapacity:  result.FrameCapacity,
+		payloadBytes:   result.PayloadCapacity,
+		eccPercent:     result.ECCPercent,
+		eccBytes:       result.ECCBytes,
+		packetBytes:    result.PacketBytes,
 	}
 }
 
@@ -62,7 +66,8 @@ func (p *screenEncoderProgress) startSummary() {
 	if unusedBytes < 0 {
 		unusedBytes = 0
 	}
-	fmt.Fprintf(p.out, "file=%d bytes md5=%s source_blocks=%d\n", p.fileSize, p.md5, p.blockCount)
+	fmt.Fprintf(p.out, "file=%d bytes compressed=%d bytes transfer=%d bytes md5=%s source_blocks=%d\n",
+		p.fileSize, p.compressedSize, p.transferSize, p.md5, p.blockCount)
 	fmt.Fprintf(p.out, "per-frame capacity: codec=%d bytes (%d bits), actual_packet=%d bytes\n", p.frameCapacity, p.frameCapacity*8, packetBytes)
 	fmt.Fprintf(p.out, "  header=%d bytes: magic=ACB1 file_size=8 frame_id=4\n", FrameHeaderSize)
 	fmt.Fprintf(p.out, "  data_area=%d bytes after header\n", p.payloadBytes)
@@ -204,7 +209,7 @@ func (p *screenDecoderProgress) noteStarted(fileSize int, blockCount int) {
 	}
 	p.fileSize = fileSize
 	p.blockCount = blockCount
-	fmt.Fprintf(p.out, "\nvalid frame detected: file=%d bytes blocks=%d block=%d bytes\n", fileSize, blockCount, p.blockSize)
+	fmt.Fprintf(p.out, "\nvalid frame detected: transfer=%d bytes blocks=%d block=%d bytes\n", fileSize, blockCount, p.blockSize)
 }
 
 func (p *screenDecoderProgress) noteValid(rank int) {
