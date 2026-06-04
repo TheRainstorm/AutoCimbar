@@ -36,7 +36,10 @@ func (s *screenFrameSource) frameHandler(w http.ResponseWriter, _ *http.Request)
 		return
 	}
 	w.Header().Set("Content-Type", "image/png")
-	_ = png.Encode(w, img)
+	if err := png.Encode(w, img); err != nil {
+		return
+	}
+	s.notePresented()
 }
 
 func (s *screenFrameSource) pageHandler(fps int, rect image.Rectangle) http.HandlerFunc {

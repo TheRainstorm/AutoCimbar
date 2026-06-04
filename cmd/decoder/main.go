@@ -44,6 +44,7 @@ func main() {
 			Region:     *region,
 			FPS:        *fps,
 			Timeout:    *timeout,
+			Progress:   os.Stderr,
 		}); err != nil {
 			fmt.Fprintf(os.Stderr, "screen decoder failed: %v\n", err)
 			os.Exit(1)

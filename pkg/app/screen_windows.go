@@ -204,6 +204,7 @@ func (w *nativeWindow) updateFrame() error {
 		return err
 	}
 	w.pixels = rgbaToBGRA(img)
+	w.source.notePresented()
 	return nil
 }
 

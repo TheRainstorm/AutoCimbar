@@ -2,7 +2,9 @@ package app
 
 import (
 	"fmt"
+	"hash/crc32"
 	"image"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -25,6 +27,7 @@ type ScreenEncodeConfig struct {
 	FPS       int
 	Addr      string
 	Open      bool
+	Progress  io.Writer
 }
 
 type ScreenDecodeConfig struct {
@@ -36,6 +39,7 @@ type ScreenDecodeConfig struct {
 	Region     string
 	FPS        int
 	Timeout    time.Duration
+	Progress   io.Writer
 }
 
 func DisplayBounds() []image.Rectangle {
@@ -71,6 +75,7 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read input file: %w", err)
 	}
+	checksum := crc32.ChecksumIEEE(data)
 	fountainEnc, err := fountain.NewEncoder(data, blockSize)
 	if err != nil {
 		return nil, err
@@ -88,14 +93,6 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 		return nil, err
 	}
 
-	source := &screenFrameSource{
-		codecEnc:    codecEnc,
-		fountainEnc: fountainEnc,
-		fileSize:    len(data),
-		width:       imageSize,
-		height:      imageSize,
-	}
-
 	result := &EncodeResult{
 		GridSize:        cfg.GridSize,
 		Scale:           cfg.Scale,
@@ -107,6 +104,19 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 		BlockSize:       fountainEnc.BlockSize(),
 		BlockCount:      fountainEnc.BlockCount(),
 	}
+	progress := newScreenEncoderProgress(cfg.Progress, result, checksum)
+	progress.startSummary()
+	defer progress.finishLine()
+
+	source := &screenFrameSource{
+		codecEnc:    codecEnc,
+		fountainEnc: fountainEnc,
+		fileSize:    len(data),
+		width:       imageSize,
+		height:      imageSize,
+		progress:    progress,
+	}
+
 	if err := runScreenEncoderBackend(cfg, source, rect); err != nil {
 		return result, err
 	}
@@ -153,19 +163,26 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 	if interval <= 0 {
 		interval = time.Millisecond
 	}
+	progress := newScreenDecoderProgress(cfg.Progress, blockSize)
+	defer progress.finishLine()
 
 	for time.Now().Before(deadline) {
 		img, err := screenshot.CaptureRect(rect)
 		if err != nil {
 			return fmt.Errorf("capture screen: %w", err)
 		}
+		progress.noteCaptured()
 		packet, err := codecDec.Decode(img)
 		if err != nil {
-			return fmt.Errorf("decode captured frame: %w", err)
+			progress.noteInvalid()
+			time.Sleep(interval)
+			continue
 		}
 		frame, err := ParsePacket(packet, blockSize)
 		if err != nil {
-			return fmt.Errorf("parse captured frame: %w", err)
+			progress.noteInvalid()
+			time.Sleep(interval)
+			continue
 		}
 		if fountainDec == nil {
 			fileSize = frame.FileSize
@@ -174,12 +191,16 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 			if err != nil {
 				return err
 			}
+			progress.noteStarted(fileSize, blockCount)
 		} else if frame.FileSize != fileSize {
-			return fmt.Errorf("captured frame belongs to a different file size: got %d, want %d", frame.FileSize, fileSize)
+			progress.noteInvalid()
+			time.Sleep(interval)
+			continue
 		}
 		if _, err := fountainDec.AddFrame(frame.FrameID, frame.Payload); err != nil {
 			return fmt.Errorf("add captured frame: %w", err)
 		}
+		progress.noteValid(fountainDec.Rank())
 		if fountainDec.Complete() {
 			result, err := fountainDec.Decode()
 			if err != nil {
@@ -204,6 +225,7 @@ type screenFrameSource struct {
 	frameID     uint32
 	width       int
 	height      int
+	progress    *screenEncoderProgress
 	mu          sync.Mutex
 }
 
@@ -218,7 +240,12 @@ func (s *screenFrameSource) NextImage() (*image.RGBA, error) {
 	if err != nil {
 		return nil, err
 	}
+	s.progress.noteEncoded()
 	return img, nil
+}
+
+func (s *screenFrameSource) notePresented() {
+	s.progress.notePresented()
 }
 
 func ResolveEncoderRegion(region string, width int, height int) (image.Rectangle, error) {

@@ -5,6 +5,8 @@ import (
 	"math/rand"
 )
 
+const MaxDecoderBlockCount = 1 << 20
+
 type Encoder struct {
 	data       []byte
 	blockSize  int
@@ -125,6 +127,19 @@ func NewDecoder(fileSize int, blockSize int, blockCount int) (*Decoder, error) {
 	}
 	if blockCount <= 0 {
 		return nil, fmt.Errorf("block count must be > 0")
+	}
+	if blockCount > MaxDecoderBlockCount {
+		return nil, fmt.Errorf("block count %d exceeds max %d", blockCount, MaxDecoderBlockCount)
+	}
+	minBlockCount := fileSize / blockSize
+	if fileSize%blockSize != 0 {
+		minBlockCount++
+	}
+	if minBlockCount == 0 {
+		minBlockCount = 1
+	}
+	if minBlockCount > blockCount {
+		return nil, fmt.Errorf("file size %d requires %d block(s), got %d", fileSize, minBlockCount, blockCount)
 	}
 
 	return &Decoder{

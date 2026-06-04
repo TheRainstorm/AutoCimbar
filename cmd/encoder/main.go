@@ -53,6 +53,7 @@ func main() {
 			FPS:       *fps,
 			Addr:      *addr,
 			Open:      *open,
+			Progress:  os.Stderr,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "screen encoder failed: %v\n", err)

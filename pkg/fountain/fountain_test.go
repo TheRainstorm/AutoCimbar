@@ -71,3 +71,9 @@ func TestRecoversMissingSystemBlocksWithRedundancy(t *testing.T) {
 		t.Fatal("decoded data mismatch")
 	}
 }
+
+func TestNewDecoderRejectsHugeBlockCount(t *testing.T) {
+	if _, err := NewDecoder(1, 1, MaxDecoderBlockCount+1); err == nil {
+		t.Fatal("expected huge block count error")
+	}
+}
