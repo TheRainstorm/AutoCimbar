@@ -10,6 +10,18 @@
   - **无需定位标记**：encoder 和 decoder 的显示/截图区域手动指定，节省空间提高数据密度
   - 数字信道更可靠，可以追求更高的信息密度和帧率
 
+### 核心技术原理：Image Hashing
+参考 libcimbar 的设计，使用 **image hash** 进行符号识别：
+
+1. **符号设计**：每个 8×8 tile 转换为 64-bit image hash（阈值化：亮=1，暗=0）
+2. **汉明距离**：16 个符号彼此间保持约 20 bits 汉明距离，确保即使模糊/损坏也能正确识别
+3. **解码方法**：计算 tile 的 image hash，与 16 个参考符号比较汉明距离，选择最接近的
+
+**优势**：
+- 简单高效，适合实时处理
+- 对模糊、噪声有良好的容错能力
+- libcimbar 已证明在物理摄像头场景下可达 106 KB/s
+
 ## 1. 项目概述
 
 ### 1.1 项目目标
@@ -83,8 +95,19 @@
 
 **形状通道 (Symbol Channel)**
 - 16 种形状 (4 bits per cell)
-- 选取汉明距离最远的 16 种形状，提高容错能力
-- 形状设计参考 libcimbar 的最优形状集
+- **选择标准**：汉明距离最远的 16 种形状（参考 libcimbar）
+  - 每对符号的 image hash 汉明距离约 20 bits
+  - 即使符号模糊或损坏，距离关系仍基本保持
+- **符号来源**：
+  - 方案 A：直接使用 libcimbar 的 16 个符号（如果许可允许）
+  - 方案 B：使用遗传算法生成新符号集（参考 cimbar-tiles-generator）
+  - 方案 C：手工设计 + 实验筛选（libcimbar 原始方法）
+
+**Image Hash 原理**
+- 8×8 tile → 64-bit 二进制数
+- 阈值化：每个像素 > 阈值则为 1，否则为 0
+- 从左到右，从上到下编码为 64-bit 数字
+- 解码时计算汉明距离，选择最接近的符号
 
 **Cell 物理尺寸**
 - 基础 cell 大小: 4×4 像素（逻辑单位）
@@ -881,50 +904,111 @@ func colorDistance(r1, g1, b1 uint8, ref RGBColor) float64 {
 ```
 
 
-#### 9.4.3 形状识别
+#### 9.4.3 形状识别（Image Hash 方法）
 ```go
+// 参考 libcimbar 的 image hash 识别方法
 func recognizeShape(cellImg image.Image) Shape {
-    // 识别 16 种形状（参考 libcimbar 汉明距离最远的形状集）
+    // 1. 计算 cell 的 image hash
+    hash := computeImageHash(cellImg)
     
-    // 1. 图像预处理
-    binary := threshold(cellImg)
-    
-    // 2. 提取形状特征
-    features := extractShapeFeatures(binary)
-    
-    // 3. 与 16 种参考形状进行匹配
-    // 使用模板匹配或特征距离
-    minDist := math.MaxFloat64
+    // 2. 与 16 个参考符号计算汉明距离
+    minDist := 64
     bestShape := Shape(0)
     
-    for i, refShape := range reference16Shapes {
-        dist := shapeDistance(features, refShape)
+    for i, refHash := range reference16ShapeHashes {
+        dist := hammingDistance(hash, refHash)
         if dist < minDist {
             minDist = dist
             bestShape = Shape(i)
         }
     }
     
+    // 3. 可选：检查是否有明确的最佳匹配
+    // 如果最小距离与次小距离太接近，可能是识别错误
+    
     return bestShape
 }
 
-func shapeDistance(features, refFeatures ShapeFeatures) float64 {
-    // 可以使用：
-    // - Hu moments 距离
-    // - 模板匹配分数
-    // - 边缘方向直方图距离
-    // 等多种特征组合
+func computeImageHash(img image.Image) uint64 {
+    // libcimbar 使用的阈值化 image hash
+    // 1. 确保图像是 8×8（如果不是则缩放）
+    resized := resize(img, 8, 8)
     
-    return computeFeatureDistance(features, refFeatures)
+    // 2. 转灰度
+    gray := toGrayscale(resized)
+    
+    // 3. 计算平均亮度作为阈值
+    threshold := computeAverageBrightness(gray)
+    
+    // 4. 生成 64-bit hash
+    var hash uint64
+    for y := 0; y < 8; y++ {
+        for x := 0; x < 8; x++ {
+            bit := 0
+            if getBrightness(gray, x, y) > threshold {
+                bit = 1
+            }
+            hash = (hash << 1) | uint64(bit)
+        }
+    }
+    
+    return hash
 }
 
-// 16 种参考形状需要预先定义
-// 选择汉明距离最远的形状集，提高容错能力
-var reference16Shapes = []ShapeFeatures{
-    // Shape 0-15 的特征
-    // 设计参考 libcimbar
+func hammingDistance(a, b uint64) int {
+    // XOR 后计算 1 的个数
+    xor := a ^ b
+    return popcount(xor)
+}
+
+func popcount(x uint64) int {
+    // 计算 64-bit 数字中 1 的个数
+    // 可以使用 math/bits.OnesCount64
+    count := 0
+    for x != 0 {
+        count += int(x & 1)
+        x >>= 1
+    }
+    return count
+}
+
+// 16 种参考符号的 image hash（启动时预计算或硬编码）
+var reference16ShapeHashes = [16]uint64{
+    // 从 libcimbar 符号文件计算得到
+    // 或自己设计符号后计算
+    // 每个 hash 之间汉明距离应该 >= 15-20 bits
+    0x0000000000000000,  // Shape 0
+    0x0000000000000001,  // Shape 1
+    // ... 其余 14 个
+}
+
+// 符号初始化：从文件加载或生成
+func init() {
+    // 方案 A：从 libcimbar 的 bitmap/ 目录加载 PNG
+    loadSymbolsFromLibcimbar("path/to/libcimbar/bitmap/")
+    
+    // 方案 B：使用内置的符号定义
+    // ...
+}
+
+func loadSymbolsFromLibcimbar(path string) {
+    for i := 0; i < 16; i++ {
+        filename := fmt.Sprintf("%s/symbol_%d.png", path, i)
+        img := loadImage(filename)
+        reference16ShapeHashes[i] = computeImageHash(img)
+    }
 }
 ```
+
+**优势**：
+- 简单高效：只需要位运算
+- libcimbar 证明可达 106 KB/s
+- 对模糊和噪声有良好容错
+
+**优化方向**（Phase 2）**：
+- 实现 libcimbar 的优先级解码（按汉明距离排序）
+- Drift tracking：跟踪局部像素偏移
+- 置信度阈值：汉明距离太大时拒绝解码
 
 #### 9.4.4 去重机制
 ```go
