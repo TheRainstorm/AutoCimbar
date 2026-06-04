@@ -59,7 +59,8 @@ func main() {
 			fmt.Fprintf(os.Stderr, "screen encoder failed: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Printf("screen encoded %d bytes, %d source block(s), block=%d bytes\n", result.FileSize, result.BlockCount, result.BlockSize)
+		fmt.Printf("screen encoded %d bytes, %d source block(s), block=%d bytes, md5=%s\n",
+			result.FileSize, result.BlockCount, result.BlockSize, result.MD5)
 		return
 	}
 
@@ -69,7 +70,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("encoded %d bytes into %d frame(s), %d source block(s)\n", result.FileSize, len(result.FramePaths), result.BlockCount)
+	fmt.Printf("encoded %d bytes into %d frame(s), %d source block(s), md5=%s\n",
+		result.FileSize, len(result.FramePaths), result.BlockCount, result.MD5)
 	fmt.Printf("Q=%d B=%d cell=%dpx image=%dx%dpx payload=%d bytes/frame block=%d bytes\n",
 		result.GridSize, result.Scale, result.CellSize, result.ImageSize, result.ImageSize, result.PayloadCapacity, result.BlockSize)
 	fmt.Printf("output: %s\n", *outputDir)

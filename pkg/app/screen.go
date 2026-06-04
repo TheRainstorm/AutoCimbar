@@ -3,7 +3,6 @@ package app
 import (
 	"errors"
 	"fmt"
-	"hash/crc32"
 	"image"
 	"io"
 	"os"
@@ -76,7 +75,6 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read input file: %w", err)
 	}
-	checksum := crc32.ChecksumIEEE(data)
 	fountainEnc, err := fountain.NewEncoder(data, blockSize)
 	if err != nil {
 		return nil, err
@@ -104,8 +102,9 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 		FileSize:        len(data),
 		BlockSize:       fountainEnc.BlockSize(),
 		BlockCount:      fountainEnc.BlockCount(),
+		MD5:             BytesMD5Hex(data),
 	}
-	progress := newScreenEncoderProgress(cfg.Progress, result, checksum)
+	progress := newScreenEncoderProgress(cfg.Progress, result)
 	progress.startSummary()
 	defer progress.finishLine()
 

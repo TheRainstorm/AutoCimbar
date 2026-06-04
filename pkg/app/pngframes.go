@@ -25,6 +25,7 @@ type EncodeResult struct {
 	FileSize        int
 	BlockSize       int
 	BlockCount      int
+	MD5             string
 }
 
 func EncodeFileToPNGFrames(inputPath string, outputDir string, gridSize int, scale int, symbolDir string, redundancyPercent int, blockSize int) (*EncodeResult, error) {
@@ -117,6 +118,7 @@ func EncodeFileToPNGFrames(inputPath string, outputDir string, gridSize int, sca
 		FileSize:        len(data),
 		BlockSize:       fountainEnc.BlockSize(),
 		BlockCount:      fountainEnc.BlockCount(),
+		MD5:             BytesMD5Hex(data),
 	}, nil
 }
 

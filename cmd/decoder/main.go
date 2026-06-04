@@ -49,7 +49,12 @@ func main() {
 			fmt.Fprintf(os.Stderr, "screen decoder failed: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Printf("decoded screen -> %s\n", *output)
+		md5, err := app.FileMD5Hex(*output)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "md5 failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("decoded screen -> %s, md5=%s\n", *output, md5)
 		return
 	}
 
@@ -58,5 +63,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("decoded %s -> %s\n", *input, *output)
+	md5, err := app.FileMD5Hex(*output)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "md5 failed: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("decoded %s -> %s, md5=%s\n", *input, *output, md5)
 }
