@@ -71,6 +71,30 @@ func TestRGBToLAB(t *testing.T) {
 	}
 }
 
+func TestRecognizeColorRGB(t *testing.T) {
+	r := NewRecognizer4Color()
+
+	tests := []struct {
+		name     string
+		color    color.RGBA
+		expected ColorID
+	}{
+		{"Green", color.RGBA{R: 0, G: 240, B: 0, A: 255}, ColorGreen},
+		{"White", color.RGBA{R: 230, G: 230, B: 230, A: 255}, ColorWhite},
+		{"Red", color.RGBA{R: 240, G: 20, B: 10, A: 255}, ColorRed},
+		{"Blue", color.RGBA{R: 10, G: 20, B: 240, A: 255}, ColorBlue},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			id, _ := r.RecognizeColorRGB(tt.color)
+			if id != tt.expected {
+				t.Fatalf("RecognizeColorRGB = %d, want %d", id, tt.expected)
+			}
+		})
+	}
+}
+
 // TestColorDistance 测试颜色距离计算
 func TestColorDistance(t *testing.T) {
 	black := RGBToLAB(color.RGBA{R: 0, G: 0, B: 0, A: 255})
@@ -216,5 +240,15 @@ func BenchmarkRGBToLAB(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = RGBToLAB(c)
+	}
+}
+
+func BenchmarkRecognizeColorRGB(b *testing.B) {
+	r := NewRecognizer4Color()
+	c := color.RGBA{R: 128, G: 64, B: 200, A: 255}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = r.RecognizeColorRGB(c)
 	}
 }

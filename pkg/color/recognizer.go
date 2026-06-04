@@ -90,6 +90,24 @@ func (r *Recognizer) RecognizeColor(c color.RGBA) (ColorID, float64) {
 	return bestID, minDist
 }
 
+func (r *Recognizer) RecognizeColorRGB(c color.RGBA) (ColorID, uint32) {
+	bestID := ColorID(0)
+	var minDist uint32 = ^uint32(0)
+
+	for i, ref := range r.referenceRGB {
+		dr := int32(c.R) - int32(ref.R)
+		dg := int32(c.G) - int32(ref.G)
+		db := int32(c.B) - int32(ref.B)
+		dist := uint32(dr*dr + dg*dg + db*db)
+		if dist < minDist {
+			minDist = dist
+			bestID = ColorID(i)
+		}
+	}
+
+	return bestID, minDist
+}
+
 // GetColor 获取颜色 ID 对应的 RGB 颜色
 func (r *Recognizer) GetColor(id ColorID) color.RGBA {
 	if int(id) >= len(r.referenceRGB) {

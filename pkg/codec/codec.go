@@ -542,7 +542,7 @@ func (d *Decoder) recognizeCellColorRGBA(img *image.RGBA, x, y int, shapeID symb
 		B: uint8(sumB / count),
 		A: 255,
 	}
-	colorID, _ := d.colorRecognizer.RecognizeColor(avg)
+	colorID, _ := d.colorRecognizer.RecognizeColorRGB(avg)
 	return colorID
 }
 
@@ -610,7 +610,7 @@ func (d *Decoder) recognizeCellColor(cellImg image.Image, shapeID symbol.SymbolI
 		B: uint8(sumB / uint64(count)),
 		A: 255,
 	}
-	colorID, _ := d.colorRecognizer.RecognizeColor(avg)
+	colorID, _ := d.colorRecognizer.RecognizeColorRGB(avg)
 	return colorID
 }
 
@@ -651,7 +651,7 @@ func (d *Decoder) recognizeCellColorAt(img image.Image, x, y int, shapeID symbol
 		B: uint8(sumB / uint64(count)),
 		A: 255,
 	}
-	colorID, _ := d.colorRecognizer.RecognizeColor(avg)
+	colorID, _ := d.colorRecognizer.RecognizeColorRGB(avg)
 	return colorID
 }
 
