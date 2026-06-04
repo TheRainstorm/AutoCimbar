@@ -21,8 +21,16 @@ func main() {
 	fps := flag.Int("fps", 30, "screen frame rate")
 	addr := flag.String("addr", "127.0.0.1:8080", "screen encoder HTTP listen address")
 	open := flag.Bool("open", true, "open the screen encoder page in the default browser")
+	listDisplays := flag.Bool("list-displays", false, "list detected display indexes and bounds")
 	symbolDir := flag.String("symbols", app.DefaultSymbolDir, "optional directory containing 16 libcimbar bitmap symbols; empty uses built-in symbols")
 	flag.Parse()
+
+	if *listDisplays {
+		for i, bounds := range app.DisplayBounds() {
+			fmt.Printf("%d: %v width=%d height=%d\n", i, bounds, bounds.Dx(), bounds.Dy())
+		}
+		return
+	}
 
 	if *input == "" {
 		fmt.Fprintln(os.Stderr, "missing -i input file")

@@ -19,8 +19,16 @@ func main() {
 	region := flag.String("R", "", "screen capture region SCREEN:X:Y, negative values anchor from right/bottom")
 	fps := flag.Int("fps", 30, "screen capture rate")
 	timeout := flag.Duration("timeout", 5*time.Minute, "screen decode timeout")
+	listDisplays := flag.Bool("list-displays", false, "list detected display indexes and bounds")
 	symbolDir := flag.String("symbols", app.DefaultSymbolDir, "optional directory containing 16 libcimbar bitmap symbols; empty uses built-in symbols")
 	flag.Parse()
+
+	if *listDisplays {
+		for i, bounds := range app.DisplayBounds() {
+			fmt.Printf("%d: %v width=%d height=%d\n", i, bounds, bounds.Dx(), bounds.Dy())
+		}
+		return
+	}
 
 	if *screen {
 		if *region == "" {

@@ -38,6 +38,15 @@ type ScreenDecodeConfig struct {
 	Timeout    time.Duration
 }
 
+func DisplayBounds() []image.Rectangle {
+	count := screenshot.NumActiveDisplays()
+	displays := make([]image.Rectangle, 0, count)
+	for i := 0; i < count; i++ {
+		displays = append(displays, screenshot.GetDisplayBounds(i))
+	}
+	return displays
+}
+
 func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 	if cfg.FPS <= 0 {
 		cfg.FPS = 30

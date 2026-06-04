@@ -93,6 +93,12 @@ Get-FileHash .\output.bin
 
 发送端直接打开原生无边框置顶窗口，不需要浏览器。
 
+如果有多块屏幕，先查看程序识别到的屏幕索引和坐标：
+
+```powershell
+.\bin\encoder.exe -list-displays
+```
+
 ```powershell
 .\bin\encoder.exe -screen -i input.bin -Q 50 -B 1 -R 0:-0:-0 -fps 30
 ```
@@ -123,6 +129,12 @@ Get-FileHash .\output.bin
 - `X:Y`：截图区域左上角；负数从该屏幕右/下边缘定位
 - `-timeout`：等待足够喷泉帧的最长时间
 
+也可以用 decoder 查看屏幕索引：
+
+```powershell
+.\bin\decoder.exe -list-displays
+```
+
 示例：
 
 - `-R 0:0:0`：主屏左上角
@@ -147,7 +159,9 @@ Get-FileHash .\output.bin
 -fps           屏幕播放帧率
 -addr          非 Windows HTTP fallback 的播放器地址
 -open          非 Windows HTTP fallback 是否自动打开浏览器
+-list-displays 列出程序识别到的屏幕索引和坐标
 -symbols       可选 libcimbar bitmap 符号目录；为空时使用内置符号
+-list-displays 列出程序识别到的屏幕索引和坐标
 ```
 
 ### decoder

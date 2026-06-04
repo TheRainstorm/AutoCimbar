@@ -39,25 +39,36 @@ var (
 	user32 = windows.NewLazySystemDLL("user32.dll")
 	gdi32  = windows.NewLazySystemDLL("gdi32.dll")
 
-	procBeginPaint         = user32.NewProc("BeginPaint")
-	procCreateWindowExW    = user32.NewProc("CreateWindowExW")
-	procDefWindowProcW     = user32.NewProc("DefWindowProcW")
-	procDestroyWindow      = user32.NewProc("DestroyWindow")
-	procDispatchMessageW   = user32.NewProc("DispatchMessageW")
-	procEndPaint           = user32.NewProc("EndPaint")
-	procGetMessageW        = user32.NewProc("GetMessageW")
-	procInvalidateRect     = user32.NewProc("InvalidateRect")
-	procKillTimer          = user32.NewProc("KillTimer")
-	procPostQuitMessage    = user32.NewProc("PostQuitMessage")
-	procRegisterClassExW   = user32.NewProc("RegisterClassExW")
-	procSetProcessDPIAware = user32.NewProc("SetProcessDPIAware")
-	procSetTimer           = user32.NewProc("SetTimer")
-	procShowWindow         = user32.NewProc("ShowWindow")
-	procTranslateMessage   = user32.NewProc("TranslateMessage")
-	procUpdateWindow       = user32.NewProc("UpdateWindow")
+	procBeginPaint                    = user32.NewProc("BeginPaint")
+	procCreateWindowExW               = user32.NewProc("CreateWindowExW")
+	procDefWindowProcW                = user32.NewProc("DefWindowProcW")
+	procDestroyWindow                 = user32.NewProc("DestroyWindow")
+	procDispatchMessageW              = user32.NewProc("DispatchMessageW")
+	procEndPaint                      = user32.NewProc("EndPaint")
+	procGetMessageW                   = user32.NewProc("GetMessageW")
+	procInvalidateRect                = user32.NewProc("InvalidateRect")
+	procKillTimer                     = user32.NewProc("KillTimer")
+	procPostQuitMessage               = user32.NewProc("PostQuitMessage")
+	procRegisterClassExW              = user32.NewProc("RegisterClassExW")
+	procSetProcessDpiAwarenessContext = user32.NewProc("SetProcessDpiAwarenessContext")
+	procSetProcessDPIAware            = user32.NewProc("SetProcessDPIAware")
+	procSetTimer                      = user32.NewProc("SetTimer")
+	procShowWindow                    = user32.NewProc("ShowWindow")
+	procTranslateMessage              = user32.NewProc("TranslateMessage")
+	procUpdateWindow                  = user32.NewProc("UpdateWindow")
 
 	procStretchDIBits = gdi32.NewProc("StretchDIBits")
 )
+
+func init() {
+	// Set DPI awareness before any monitor bounds are queried. Otherwise Windows
+	// can virtualize coordinates and native window placement lands on the wrong
+	// physical pixels on mixed/HiDPI multi-monitor layouts.
+	const dpiAwarenessContextPerMonitorAwareV2 = ^uintptr(3)
+	if ret, _, _ := procSetProcessDpiAwarenessContext.Call(dpiAwarenessContextPerMonitorAwareV2); ret == 0 {
+		_, _, _ = procSetProcessDPIAware.Call()
+	}
+}
 
 type nativeWindow struct {
 	source *screenFrameSource
@@ -73,8 +84,6 @@ var activeNativeWindow *nativeWindow
 func runScreenEncoderBackend(cfg ScreenEncodeConfig, source *screenFrameSource, rect image.Rectangle) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-
-	_, _, _ = procSetProcessDPIAware.Call()
 
 	win := &nativeWindow{
 		source: source,
