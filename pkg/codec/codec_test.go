@@ -363,6 +363,20 @@ func BenchmarkDecode(b *testing.B) {
 	}
 }
 
+func BenchmarkDecodeFullFrame(b *testing.B) {
+	symRec, colorRec := createBenchRecognizers(b)
+	encoder := NewEncoder(symRec, colorRec, 8, 50)
+	decoder := NewDecoder(symRec, colorRec, 8, 50)
+
+	data := make([]byte, 1875)
+	img, _ := encoder.Encode(data)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = decoder.Decode(img)
+	}
+}
+
 func createBenchRecognizers(b *testing.B) (*symbol.Recognizer, *colorpkg.Recognizer) {
 	b.Helper()
 

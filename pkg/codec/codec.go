@@ -327,6 +327,7 @@ type Decoder struct {
 	gridSize         int
 	templateMasks    [symbol.NumSymbols][64]bool
 	templatesReady   [symbol.NumSymbols]bool
+	foregroundPixels [symbol.NumSymbols][]image.Point
 }
 
 // NewDecoder 创建解码器
@@ -338,6 +339,7 @@ func NewDecoder(symbolRecognizer *symbol.Recognizer, colorRecognizer *colorpkg.R
 		gridSize:         gridSize,
 	}
 	d.templateMasks, d.templatesReady = buildTemplateMasks(symbolRecognizer)
+	d.buildForegroundPixels()
 	return d
 }
 
@@ -368,6 +370,9 @@ func (d *Decoder) extractCells(img image.Image) ([]Cell, error) {
 	if bounds.Dx() < requiredW || bounds.Dy() < requiredH {
 		return nil, fmt.Errorf("image too small: got %dx%d, need at least %dx%d", bounds.Dx(), bounds.Dy(), requiredW, requiredH)
 	}
+	if rgba, ok := img.(*image.RGBA); ok {
+		return d.extractCellsRGBA(rgba, bounds, numCells), nil
+	}
 
 	for i := 0; i < numCells; i++ {
 		x := (i % d.gridSize) * d.cellSize
@@ -385,6 +390,98 @@ func (d *Decoder) extractCells(img image.Image) ([]Cell, error) {
 	}
 
 	return cells, nil
+}
+
+func (d *Decoder) extractCellsRGBA(img *image.RGBA, bounds image.Rectangle, numCells int) []Cell {
+	cells := make([]Cell, numCells)
+
+	for i := 0; i < numCells; i++ {
+		x := bounds.Min.X + (i%d.gridSize)*d.cellSize
+		y := bounds.Min.Y + (i/d.gridSize)*d.cellSize
+
+		hash := d.cellHashRGBA(img, x, y)
+		shapeID, _ := d.symbolRecognizer.RecognizeHash(hash)
+		colorID := d.recognizeCellColorRGBA(img, x, y, shapeID)
+
+		cells[i] = Cell{
+			Color: colorID,
+			Shape: shapeID,
+		}
+	}
+
+	return cells
+}
+
+func (d *Decoder) buildForegroundPixels() {
+	for shapeID := symbol.SymbolID(0); shapeID < symbol.NumSymbols; shapeID++ {
+		if !d.templatesReady[shapeID] {
+			continue
+		}
+		pixels := make([]image.Point, 0, d.cellSize*d.cellSize/2)
+		for dy := 0; dy < d.cellSize; dy++ {
+			for dx := 0; dx < d.cellSize; dx++ {
+				tx := dx * 8 / d.cellSize
+				ty := dy * 8 / d.cellSize
+				if d.templateMasks[shapeID][ty*8+tx] {
+					pixels = append(pixels, image.Point{X: dx, Y: dy})
+				}
+			}
+		}
+		d.foregroundPixels[shapeID] = pixels
+	}
+}
+
+func (d *Decoder) cellHashRGBA(img *image.RGBA, x, y int) uint64 {
+	var samples [64]uint8
+	var sum uint64
+
+	for ty := 0; ty < 8; ty++ {
+		for tx := 0; tx < 8; tx++ {
+			sx := x + tx*d.cellSize/8
+			sy := y + ty*d.cellSize/8
+			pix := img.PixOffset(sx, sy)
+			r := img.Pix[pix]
+			g := img.Pix[pix+1]
+			b := img.Pix[pix+2]
+			gray := uint8((299*uint32(r) + 587*uint32(g) + 114*uint32(b)) / 1000)
+			samples[ty*8+tx] = gray
+			sum += uint64(gray)
+		}
+	}
+
+	threshold := uint8(sum / 64)
+	var hash uint64
+	for _, gray := range samples {
+		bit := uint64(0)
+		if gray > threshold {
+			bit = 1
+		}
+		hash = (hash << 1) | bit
+	}
+	return hash
+}
+
+func (d *Decoder) recognizeCellColorRGBA(img *image.RGBA, x, y int, shapeID symbol.SymbolID) colorpkg.ColorID {
+	if shapeID >= symbol.NumSymbols || len(d.foregroundPixels[shapeID]) == 0 {
+		return d.recognizeCellColorAt(img, x, y, shapeID)
+	}
+
+	var sumR, sumG, sumB uint64
+	for _, p := range d.foregroundPixels[shapeID] {
+		pix := img.PixOffset(x+p.X, y+p.Y)
+		sumR += uint64(img.Pix[pix])
+		sumG += uint64(img.Pix[pix+1])
+		sumB += uint64(img.Pix[pix+2])
+	}
+	count := uint64(len(d.foregroundPixels[shapeID]))
+	avg := color.RGBA{
+		R: uint8(sumR / count),
+		G: uint8(sumG / count),
+		B: uint8(sumB / count),
+		A: 255,
+	}
+	colorID, _ := d.colorRecognizer.RecognizeColor(avg)
+	return colorID
 }
 
 func (d *Decoder) cellHash(img image.Image, x, y int) uint64 {
