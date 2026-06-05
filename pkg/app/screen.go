@@ -329,6 +329,7 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 			}
 			progress.noteValid(fountainDec.Rank(), added, false)
 			if fountainDec.Complete() {
+				progress.noteComplete()
 				result, err := fountainDec.Decode()
 				if err != nil {
 					return err

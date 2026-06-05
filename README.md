@@ -193,12 +193,15 @@ decoder 也会在喷泉码恢复完成后校验内置的文件级 MD5；校验�
 
 两端必须使用一致的 `Q`、`B`、`-ecc`、`-color-bits`、`-shape-bits`、`-tile`、`-symbols` 和 `-packets`。文件大小会在当前线性喷泉码帧头中发送，decoder 不需要手动指定。
 
-decoder 进度中的 `packet_fps=valid:X repeat:Y useful:Z invalid_fps:W` 含义：
+decoder 进度中的 `cap`、`dec`、`pkt v/r/u`、`bad`、`spd`、`ema` 含义：
 
-- `valid`：通过 ECC/CRC/帧头校验的 packet 速率
-- `repeat`：有效但 frame id 已接收过的重复 packet 速率
-- `useful`：真正让喷泉码 rank 增加的 packet 速率
-- `invalid_fps`：截图已解码但 packet 校验失败、参数不匹配或内容错误的速率
+- `cap`：截图帧率
+- `dec`：完成 cell decode 的帧率
+- `pkt v/r/u`：有效 packet / 重复 packet / 让喷泉码 rank 增加的 useful packet 速率
+- `bad`：截图已解码但 packet 校验失败、参数不匹配或内容错误的速率
+- `spd`：当前窗口瞬时速度
+- `ema`：近期滑动平滑速度，使用 EMA，避免等待首帧时间拉低显示值
+- 完成后会打印 `summary`，其中总时间从首个有效帧开始计算，不包含等待 encoder 启动的时间
 
 ## 参数参考
 

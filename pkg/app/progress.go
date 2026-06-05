@@ -168,6 +168,8 @@ func (p *screenEncoderProgress) render(force bool) {
 type screenDecoderProgress struct {
 	out               io.Writer
 	start             time.Time
+	transferStart     time.Time
+	completeTime      time.Time
 	last              time.Time
 	fileSize          int
 	blockSize         int
@@ -186,6 +188,8 @@ type screenDecoderProgress struct {
 	lastDuplicate     uint64
 	lastInvalid       uint64
 	lastRecoveredByte int
+	smoothKB          float64
+	completed         bool
 	mu                sync.Mutex
 }
 
@@ -244,6 +248,10 @@ func (p *screenDecoderProgress) noteStarted(fileSize int, blockCount int) {
 	}
 	p.fileSize = fileSize
 	p.blockCount = blockCount
+	p.transferStart = time.Now()
+	p.last = p.transferStart
+	p.lastRecoveredByte = 0
+	p.smoothKB = 0
 	fmt.Fprintf(p.out, "\nvalid frame detected: transfer=%d bytes blocks=%d block=%d bytes\n", fileSize, blockCount, p.blockSize)
 }
 
@@ -264,6 +272,19 @@ func (p *screenDecoderProgress) noteValid(rank int, added bool, duplicate bool) 
 	p.render(false)
 }
 
+func (p *screenDecoderProgress) noteComplete() {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.completed {
+		p.completed = true
+		p.completeTime = time.Now()
+	}
+	p.render(true)
+}
+
 func (p *screenDecoderProgress) finishLine() {
 	if p == nil {
 		return
@@ -272,6 +293,15 @@ func (p *screenDecoderProgress) finishLine() {
 	defer p.mu.Unlock()
 	p.render(true)
 	fmt.Fprintln(p.out)
+	if p.completed && p.fileSize >= 0 && !p.transferStart.IsZero() {
+		elapsed := p.completeTime.Sub(p.transferStart)
+		if elapsed <= 0 {
+			elapsed = time.Nanosecond
+		}
+		avgKB := float64(p.fileSize) / elapsed.Seconds() / 1024
+		fmt.Fprintf(p.out, "summary: time=%s data=%s avg=%7.1f KB/s rank=%d/%d\n",
+			shortDuration(elapsed), formatBytes(p.fileSize), avgKB, p.rank, p.blockCount)
+	}
 }
 
 func (p *screenDecoderProgress) render(force bool) {
@@ -292,14 +322,23 @@ func (p *screenDecoderProgress) render(force bool) {
 	invalidFPS := float64(p.invalid-p.lastInvalid) / window.Seconds()
 	recovered := p.recoveredBytes()
 	currentKB := float64(recovered-p.lastRecoveredByte) / window.Seconds() / 1024
+	if currentKB < 0 {
+		currentKB = 0
+	}
+	if p.smoothKB == 0 {
+		p.smoothKB = currentKB
+	} else {
+		const alpha = 0.25
+		p.smoothKB = p.smoothKB*(1-alpha) + currentKB*alpha
+	}
 	elapsed := now.Sub(p.start)
-	averageKB := 0.0
-	if elapsed > 0 {
-		averageKB = float64(recovered) / elapsed.Seconds() / 1024
+	transferElapsed := elapsed
+	if !p.transferStart.IsZero() {
+		transferElapsed = now.Sub(p.transferStart)
 	}
 
 	if p.fileSize < 0 {
-		fmt.Fprintf(p.out, "\rwaiting for valid frame capture_fps=%5.1f decode_fps=%5.1f packet_fps=valid:%5.1f repeat:%5.1f useful:%5.1f invalid_fps=%5.1f invalid=%d elapsed=%s%s",
+		fmt.Fprintf(p.out, "\rwait cap=%4.0f dec=%4.0f pkt v/r/u=%4.0f/%4.0f/%4.0f bad=%4.0f bad_total=%d t=%s%s",
 			captureFPS, decodeFPS, validFPS, duplicateFPS, usefulFPS, invalidFPS, p.invalid, shortDuration(elapsed), clearLine())
 	} else {
 		progress := 1.0
@@ -310,16 +349,16 @@ func (p *screenDecoderProgress) render(force bool) {
 			}
 		}
 		eta := "unknown"
-		if averageKB > 0 && recovered < p.fileSize {
-			remaining := float64(p.fileSize-recovered) / 1024 / averageKB
+		if p.smoothKB > 0 && recovered < p.fileSize {
+			remaining := float64(p.fileSize-recovered) / 1024 / p.smoothKB
 			eta = shortDuration(time.Duration(remaining * float64(time.Second)))
 		} else if recovered >= p.fileSize {
 			eta = "0s"
 		}
-		fmt.Fprintf(p.out, "\r%s capture_fps=%5.1f decode_fps=%5.1f packet_fps=valid:%5.1f repeat:%5.1f useful:%5.1f invalid_fps=%5.1f speed=%7.1f KB/s avg=%7.1f KB/s data=%s/%s rank=%d/%d elapsed=%s eta=%s%s",
-			progressBar(progress, 24), captureFPS, decodeFPS, validFPS, duplicateFPS, usefulFPS, invalidFPS, currentKB, averageKB,
+		fmt.Fprintf(p.out, "\r%s cap=%4.0f dec=%4.0f pkt v/r/u=%4.0f/%4.0f/%4.0f bad=%4.0f spd=%6.0f ema=%6.0fKB/s data=%s/%s rank=%d/%d t=%s eta=%s%s",
+			progressBar(progress, 18), captureFPS, decodeFPS, validFPS, duplicateFPS, usefulFPS, invalidFPS, currentKB, p.smoothKB,
 			formatBytes(recovered), formatBytes(p.fileSize), p.rank, p.blockCount,
-			shortDuration(elapsed), eta, clearLine())
+			shortDuration(transferElapsed), eta, clearLine())
 	}
 
 	p.last = now
