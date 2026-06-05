@@ -362,6 +362,7 @@ type Decoder struct {
 	templateMasks    [][]bool
 	templatesReady   []bool
 	foregroundPixels [][]image.Point
+	sampleBuf        []uint8
 }
 
 // NewDecoder 创建解码器
@@ -465,6 +466,16 @@ func (d *Decoder) DecodeBGRAInto(pix []byte, width int, height int, stride int, 
 	return dst, nil
 }
 
+func (d *Decoder) samples() []uint8 {
+	need := d.tileWidth * d.tileHeight
+	if cap(d.sampleBuf) < need {
+		d.sampleBuf = make([]uint8, need)
+	} else {
+		d.sampleBuf = d.sampleBuf[:need]
+	}
+	return d.sampleBuf
+}
+
 func (d *Decoder) decodeRGBAInto(img *image.RGBA, bounds image.Rectangle, numCells int, dst []byte) {
 	for i := 0; i < numCells; i++ {
 		x := bounds.Min.X + (i%d.gridSize)*d.cellSize
@@ -503,7 +514,7 @@ func writeCellBits(dst []byte, cellIndex int, cellBits int, bits uint16) {
 }
 
 func (d *Decoder) cellHashBGRA(pix []byte, stride int, x int, y int) uint64 {
-	samples := make([]uint8, d.tileWidth*d.tileHeight)
+	samples := d.samples()
 	var sum uint64
 
 	for ty := 0; ty < d.tileHeight; ty++ {
@@ -631,7 +642,7 @@ func (d *Decoder) buildForegroundPixels() {
 }
 
 func (d *Decoder) cellHashRGBA(img *image.RGBA, x, y int) uint64 {
-	samples := make([]uint8, d.tileWidth*d.tileHeight)
+	samples := d.samples()
 	var sum uint64
 
 	for ty := 0; ty < d.tileHeight; ty++ {
@@ -676,7 +687,7 @@ func (d *Decoder) recognizeCellColorRGBA(img *image.RGBA, x, y int, shapeID symb
 }
 
 func (d *Decoder) cellHash(img image.Image, x, y int) uint64 {
-	samples := make([]uint8, d.tileWidth*d.tileHeight)
+	samples := d.samples()
 	var sum uint64
 
 	for ty := 0; ty < d.tileHeight; ty++ {

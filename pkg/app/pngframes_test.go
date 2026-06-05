@@ -6,6 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/autocambar/autocambar/pkg/symbol"
+	"github.com/autocambar/autocambar/pkg/tilegen"
 )
 
 func TestPNGFrameFountainRoundTrip(t *testing.T) {
@@ -152,6 +155,57 @@ func TestPNGFrameFountainRoundTripVariableColorBits(t *testing.T) {
 	}
 }
 
+func TestPNGFrameFountainRoundTripVariableShapeSpecs(t *testing.T) {
+	tests := []struct {
+		name      string
+		spec      symbol.Spec
+		gridSize  int
+		colorBits int
+	}{
+		{"8x8_5bit", mustTestSpec(t, 8, 8, 5), 44, 2},
+		{"8x8_6bit", mustTestSpec(t, 8, 8, 6), 40, 2},
+		{"6x6_4bit", mustTestSpec(t, 6, 6, 4), 50, 2},
+		{"4x4_3bit", mustTestSpec(t, 4, 4, 3), 56, 2},
+		{"4x4_2bit", mustTestSpec(t, 4, 4, 2), 60, 2},
+		{"4x4_4bit", mustTestSpec(t, 4, 4, 4), 52, 2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			inputPath := filepath.Join(dir, "input.bin")
+			outputPath := filepath.Join(dir, "output.bin")
+			frameDir := filepath.Join(dir, "frames")
+			symbolDir := generateTestSymbols(t, dir, tt.spec)
+
+			input := deterministicBytes(2048)
+			if err := os.WriteFile(inputPath, input, 0644); err != nil {
+				t.Fatalf("write input: %v", err)
+			}
+
+			result, err := EncodeFileToPNGFramesWithSpec(inputPath, frameDir, tt.gridSize, 1, symbolDir, 10, 0, 3, true, tt.colorBits, tt.spec)
+			if err != nil {
+				t.Fatalf("EncodeFileToPNGFramesWithSpec failed: %v", err)
+			}
+			if result.ShapeBits != tt.spec.ShapeBits || result.TileWidth != tt.spec.Width || result.TileHeight != tt.spec.Height {
+				t.Fatalf("result spec = %dx%d/%d, want %dx%d/%d", result.TileWidth, result.TileHeight, result.ShapeBits, tt.spec.Width, tt.spec.Height, tt.spec.ShapeBits)
+			}
+
+			if err := DecodePNGFramesToFileWithSpec(frameDir, outputPath, tt.gridSize, 1, symbolDir, 0, 3, tt.colorBits, tt.spec); err != nil {
+				t.Fatalf("DecodePNGFramesToFileWithSpec failed: %v", err)
+			}
+
+			output, err := os.ReadFile(outputPath)
+			if err != nil {
+				t.Fatalf("read output: %v", err)
+			}
+			if !bytes.Equal(output, input) {
+				t.Fatal("decoded output differs from input")
+			}
+		})
+	}
+}
+
 func deterministicBytes(size int) []byte {
 	data := make([]byte, size)
 	var x uint32 = 0x12345678
@@ -165,4 +219,30 @@ func deterministicBytes(size int) []byte {
 func testSymbolDir(t *testing.T) string {
 	t.Helper()
 	return DefaultSymbolDir
+}
+
+func mustTestSpec(t *testing.T, width int, height int, shapeBits int) symbol.Spec {
+	t.Helper()
+	spec, err := symbol.NewSpec(width, height, shapeBits)
+	if err != nil {
+		t.Fatalf("NewSpec: %v", err)
+	}
+	return spec
+}
+
+func generateTestSymbols(t *testing.T, baseDir string, spec symbol.Spec) string {
+	t.Helper()
+	result, err := tilegen.Generate(tilegen.Options{
+		Spec:     spec,
+		Seed:     uint64(spec.Width*100 + spec.Height*10 + spec.ShapeBits),
+		Attempts: 3000,
+	})
+	if err != nil {
+		t.Fatalf("tilegen.Generate: %v", err)
+	}
+	dir := filepath.Join(baseDir, fmt.Sprintf("symbols_%dx%d_%d", spec.Width, spec.Height, spec.ShapeBits))
+	if err := tilegen.Save(result, dir); err != nil {
+		t.Fatalf("tilegen.Save: %v", err)
+	}
+	return dir
 }
