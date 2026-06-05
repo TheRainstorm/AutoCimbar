@@ -1,0 +1,17 @@
+{
+  "spec": {
+    "Width": 4,
+    "Height": 4,
+    "ShapeBits": 2
+  },
+  "seed": 442,
+  "attempts": 4000,
+  "min_distance": 8,
+  "avg_distance": 9.333333333333334,
+  "hashes": [
+    52502,
+    30481,
+    1014,
+    45417
+  ]
+}
