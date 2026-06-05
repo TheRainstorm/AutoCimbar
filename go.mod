@@ -15,4 +15,6 @@ require (
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/jezek/xgb v1.1.1 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.8 // indirect
+	github.com/liyue201/goqr v0.0.0-20200803022322-df443203d4ea // indirect
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e // indirect
 )

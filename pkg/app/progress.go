@@ -10,6 +10,7 @@ import (
 
 type screenEncoderProgress struct {
 	out                io.Writer
+	backend            string
 	start              time.Time
 	last               time.Time
 	fileSize           int
@@ -45,6 +46,7 @@ func newScreenEncoderProgress(out io.Writer, result *EncodeResult) *screenEncode
 	now := time.Now()
 	return &screenEncoderProgress{
 		out:             out,
+		backend:         result.Backend,
 		start:           now,
 		last:            now,
 		fileSize:        result.FileSize,
@@ -83,8 +85,11 @@ func (p *screenEncoderProgress) startSummary() {
 	if unusedBytes < 0 {
 		unusedBytes = 0
 	}
-	fmt.Fprintf(p.out, "file=%d bytes source_payload=%d bytes compression=%s transfer=%d bytes md5=%s source_blocks=%d\n",
-		p.fileSize, p.compressedSize, SourceCompressionName(p.compression), p.transferSize, p.md5, p.blockCount)
+	if p.backend == "" {
+		p.backend = BackendSymbols
+	}
+	fmt.Fprintf(p.out, "file=%d bytes source_payload=%d bytes compression=%s transfer=%d bytes md5=%s source_blocks=%d backend=%s\n",
+		p.fileSize, p.compressedSize, SourceCompressionName(p.compression), p.transferSize, p.md5, p.blockCount, p.backend)
 	fmt.Fprintf(p.out, "per-frame capacity: codec=%d bytes (%d bits), tile=%dx%d shape_bits=%d color_bits=%d cell_bits=%d, packets_per_frame=%d, actual_packet=%d bytes\n",
 		p.frameCapacity, p.frameCapacity*8, p.tileWidth, p.tileHeight, p.shapeBits, p.colorBits, p.shapeBits+p.colorBits, p.packetsPerFrame, packetBytes)
 	fmt.Fprintf(p.out, "  header=%d bytes: magic=ACB1 file_size=8 frame_id=4 crc32=4\n", FrameHeaderSize)

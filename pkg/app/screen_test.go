@@ -88,7 +88,7 @@ func TestScreenFrameSourceReturnsDecodableFrame(t *testing.T) {
 		t.Fatalf("NewEncoder failed: %v", err)
 	}
 	source := &screenFrameSource{
-		codecEnc:    codec.NewEncoder(symRec, colorpkg.NewRecognizer4Color(), CellSize(scale), gridSize),
+		encoder:     codec.NewEncoder(symRec, colorpkg.NewRecognizer4Color(), CellSize(scale), gridSize),
 		fountainEnc: fountainEnc,
 		fileSize:    len([]byte("screen frame test")),
 		width:       gridSize * CellSize(scale),
@@ -140,7 +140,7 @@ func TestScreenFrameSourceReturnsMultiplePackets(t *testing.T) {
 		t.Fatalf("NewEncoder failed: %v", err)
 	}
 	source := &screenFrameSource{
-		codecEnc:        codec.NewEncoder(symRec, colorpkg.NewRecognizer4Color(), CellSize(scale), gridSize),
+		encoder:         codec.NewEncoder(symRec, colorpkg.NewRecognizer4Color(), CellSize(scale), gridSize),
 		fountainEnc:     fountainEnc,
 		fileSize:        fountainEnc.FileSize(),
 		width:           gridSize * CellSize(scale),
@@ -193,7 +193,7 @@ func BenchmarkScreenFrameSourceNextBGRASystematic(b *testing.B) {
 		b.Fatalf("NewEncoder failed: %v", err)
 	}
 	source := &screenFrameSource{
-		codecEnc:    codec.NewEncoder(symRec, colorpkg.NewRecognizer4Color(), CellSize(scale), gridSize),
+		encoder:     codec.NewEncoder(symRec, colorpkg.NewRecognizer4Color(), CellSize(scale), gridSize),
 		fountainEnc: fountainEnc,
 		fileSize:    fountainEnc.FileSize(),
 		width:       gridSize * CellSize(scale),
@@ -225,7 +225,7 @@ func BenchmarkScreenFrameSourceNextBGRARedundant(b *testing.B) {
 		b.Fatalf("NewEncoder failed: %v", err)
 	}
 	source := &screenFrameSource{
-		codecEnc:    codec.NewEncoder(symRec, colorpkg.NewRecognizer4Color(), CellSize(scale), gridSize),
+		encoder:     codec.NewEncoder(symRec, colorpkg.NewRecognizer4Color(), CellSize(scale), gridSize),
 		fountainEnc: fountainEnc,
 		fileSize:    fountainEnc.FileSize(),
 		width:       gridSize * CellSize(scale),

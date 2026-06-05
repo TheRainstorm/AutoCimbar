@@ -17,6 +17,7 @@ func main() {
 	b := flag.Int("B", 1, "screen scale factor")
 	blockSize := flag.Int("block-size", 0, "fountain block size in bytes, 0 uses max frame payload")
 	eccPercent := flag.Int("ecc", 3, "per-frame Reed-Solomon ECC percentage; encoder must use the same value")
+	backend := flag.String("backend", app.BackendSymbols, "frame backend: symbols or qr")
 	colorBits := flag.Int("color-bits", 8, "color bits per cell: 0..8 uses 1..256 colors; encoder must use the same value")
 	shapeBits := flag.Int("shape-bits", 4, "shape bits per cell: 4 uses 16 symbols, 5 uses 32, 6 uses 64; encoder must use the same value")
 	tile := flag.String("tile", "4x4", "logical shape tile size WIDTHxHEIGHT; encoder must use the same value")
@@ -81,6 +82,7 @@ func main() {
 		}
 		if err := app.DecodeScreenToFile(app.ScreenDecodeConfig{
 			OutputPath:      *output,
+			Backend:         *backend,
 			GridSize:        gridSize,
 			Scale:           *b,
 			SymbolDir:       *symbolDir,
@@ -118,7 +120,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "invalid grid size: %v\n", err)
 		os.Exit(1)
 	}
-	if err := app.DecodePNGFramesToFileWithSpec(*input, *output, gridSize, *b, *symbolDir, *blockSize, *eccPercent, *colorBits, spec); err != nil {
+	if err := app.DecodePNGFramesToFileWithBackend(*input, *output, gridSize, *b, *symbolDir, *blockSize, *eccPercent, *colorBits, spec, *backend); err != nil {
 		fmt.Fprintf(os.Stderr, "decoder failed: %v\n", err)
 		os.Exit(1)
 	}

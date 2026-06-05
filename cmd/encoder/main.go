@@ -18,6 +18,7 @@ func main() {
 	redundancy := flag.Int("redundancy", 10, "extra fountain frames as a percentage")
 	blockSize := flag.Int("block-size", 0, "fountain block size in bytes, 0 uses max frame payload")
 	eccPercent := flag.Int("ecc", 3, "per-frame Reed-Solomon ECC percentage; decoder must use the same value")
+	backend := flag.String("backend", app.BackendSymbols, "frame backend: symbols or qr")
 	colorBits := flag.Int("color-bits", 8, "color bits per cell: 0..8 uses 1..256 colors; decoder must use the same value")
 	shapeBits := flag.Int("shape-bits", 4, "shape bits per cell: 4 uses 16 symbols, 5 uses 32, 6 uses 64; decoder must use the same value")
 	tile := flag.String("tile", "4x4", "logical shape tile size WIDTHxHEIGHT; decoder must use the same value")
@@ -93,6 +94,7 @@ func main() {
 		}
 		result, err := app.EncodeFileToScreen(app.ScreenEncodeConfig{
 			InputPath:       *input,
+			Backend:         *backend,
 			GridSize:        gridSize,
 			Scale:           *b,
 			SymbolDir:       *symbolDir,
@@ -113,8 +115,8 @@ func main() {
 			fmt.Fprintf(os.Stderr, "screen encoder failed: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Printf("screen encoded %d bytes, source_payload=%d bytes, compression=%s, transfer=%d bytes, %d source block(s), block=%d bytes, md5=%s\n",
-			result.FileSize, result.CompressedSize, app.SourceCompressionName(result.Compression), result.TransferSize, result.BlockCount, result.BlockSize, result.MD5)
+		fmt.Printf("screen encoded %d bytes, source_payload=%d bytes, compression=%s, transfer=%d bytes, %d source block(s), block=%d bytes, md5=%s, backend=%s\n",
+			result.FileSize, result.CompressedSize, app.SourceCompressionName(result.Compression), result.TransferSize, result.BlockCount, result.BlockSize, result.MD5, result.Backend)
 		fmt.Printf("tile=%dx%d shape_bits=%d color_bits=%d cell_bits=%d\n",
 			result.TileWidth, result.TileHeight, result.ShapeBits, result.ColorBits, result.ShapeBits+result.ColorBits)
 		return
@@ -130,14 +132,14 @@ func main() {
 		fmt.Fprintf(os.Stderr, "invalid grid size: %v\n", err)
 		os.Exit(1)
 	}
-	result, err := app.EncodeFileToPNGFramesWithSpec(*input, *outputDir, gridSize, *b, *symbolDir, *redundancy, *blockSize, *eccPercent, !*noZstd, *colorBits, spec)
+	result, err := app.EncodeFileToPNGFramesWithBackend(*input, *outputDir, gridSize, *b, *symbolDir, *redundancy, *blockSize, *eccPercent, !*noZstd, *colorBits, spec, *backend)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "encoder failed: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("encoded %d bytes into %d frame(s), source_payload=%d bytes, compression=%s, transfer=%d bytes, %d source block(s), md5=%s\n",
-		result.FileSize, len(result.FramePaths), result.CompressedSize, app.SourceCompressionName(result.Compression), result.TransferSize, result.BlockCount, result.MD5)
+	fmt.Printf("encoded %d bytes into %d frame(s), source_payload=%d bytes, compression=%s, transfer=%d bytes, %d source block(s), md5=%s, backend=%s\n",
+		result.FileSize, len(result.FramePaths), result.CompressedSize, app.SourceCompressionName(result.Compression), result.TransferSize, result.BlockCount, result.MD5, result.Backend)
 	fmt.Printf("Q=%d B=%d tile=%dx%d shape_bits=%d color_bits=%d cell_bits=%d cell=%dpx image=%dx%dpx payload=%d bytes/frame block=%d bytes ecc=%d%% parity=%d bytes packet=%d bytes\n",
 		result.GridSize, result.Scale, result.TileWidth, result.TileHeight, result.ShapeBits, result.ColorBits, result.ShapeBits+result.ColorBits, result.CellSize, result.ImageSize, result.ImageSize, result.PayloadCapacity, result.BlockSize, result.ECCPercent, result.ECCBytes, result.PacketBytes)
 	fmt.Printf("output: %s\n", *outputDir)

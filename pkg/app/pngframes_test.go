@@ -116,6 +116,41 @@ func TestPNGFrameFountainRoundTripWithECC(t *testing.T) {
 	}
 }
 
+func TestPNGFrameQRRoundsTrip(t *testing.T) {
+	dir := t.TempDir()
+	inputPath := filepath.Join(dir, "input.bin")
+	outputPath := filepath.Join(dir, "output.bin")
+	frameDir := filepath.Join(dir, "frames")
+
+	input := deterministicBytes(1024)
+	if err := os.WriteFile(inputPath, input, 0644); err != nil {
+		t.Fatalf("write input: %v", err)
+	}
+
+	result, err := EncodeFileToPNGFramesWithBackend(inputPath, frameDir, 33, 4, "", 10, 0, 0, true, 0, symbol.DefaultSpec(), BackendQR)
+	if err != nil {
+		t.Fatalf("EncodeFileToPNGFramesWithBackend QR failed: %v", err)
+	}
+	if result.Backend != BackendQR {
+		t.Fatalf("Backend = %q, want %q", result.Backend, BackendQR)
+	}
+	if result.FrameCapacity <= FrameHeaderSize {
+		t.Fatalf("FrameCapacity = %d, want > %d", result.FrameCapacity, FrameHeaderSize)
+	}
+
+	if err := DecodePNGFramesToFileWithBackend(frameDir, outputPath, 33, 4, "", 0, 0, 0, symbol.DefaultSpec(), BackendQR); err != nil {
+		t.Fatalf("DecodePNGFramesToFileWithBackend QR failed: %v", err)
+	}
+
+	output, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	if !bytes.Equal(output, input) {
+		t.Fatal("decoded QR output differs from input")
+	}
+}
+
 func TestPNGFrameFountainRoundTripVariableColorBits(t *testing.T) {
 	for _, colorBits := range []int{0, 1, 3, 4, 5, 8} {
 		t.Run(fmt.Sprintf("colorBits%d", colorBits), func(t *testing.T) {
