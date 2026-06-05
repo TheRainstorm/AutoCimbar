@@ -1,7 +1,0 @@
-tile=8x8
-shape_bits=5
-symbols=32
-seed=805
-attempts=12000
-min_distance=22
-avg_distance=31.46

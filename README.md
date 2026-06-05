@@ -1,16 +1,17 @@
 # AutoCamBar
 
-欢呼我已经实现了梦寐以求的 1MB/s 大关。
+已经实现了梦寐以求的 1MB/s 大关
 
 AutoCamBar 是一个面向远程桌面、串流画面和单向屏幕信道的文件传输工具。encoder 把文件编码成屏幕上的高密度彩色符号帧，decoder 从指定屏幕区域截图并恢复文件。运行参数由两端提前约定，帧里只放真正传输数据。
 
 [English README](README.en.md)
 
-## 当前实验结果
+## 实验结果
 
-默认推荐 cell 已改为 `-c 4t4s8c`。以下为当前实测结果：
+以下为当前 RDP 远程实测结果：
 
-`-c 4t4s8c` （`-Q 130` 时，`-packets 8`）
+- `-c 4t4s8c` （`-Q 130` 时，`-packets 8`）
+- 有效解码 fps 只有最高 30 fps（远程桌面限制）
 
 | -Q  | speed       |
 | --- | ----------- |
@@ -21,7 +22,6 @@ AutoCamBar 是一个面向远程桌面、串流画面和单向屏幕信道的文
 
 ## 功能概览
 
-- 默认屏幕模式，默认 `-Q 120 -fps 120 -ecc 3 -c 4t4s8c`
 - 默认 zstd 压缩源文件，decoder 流式解压并校验文件 MD5
 - 每个 packet 内置 CRC，能尽早丢弃无 ECC 或低 ECC 下的错误 packet
 - 单帧 Reed-Solomon ECC，支持交织，适合 GPU 编码/串流压缩造成的局部错误
@@ -42,15 +42,6 @@ go build -o bin/decoder ./cmd/decoder
 go build -o bin/tilegen ./cmd/tilegen
 ```
 
-Windows PowerShell:
-
-```powershell
-go test ./...
-go build -o bin\encoder.exe .\cmd\encoder
-go build -o bin\decoder.exe .\cmd\decoder
-go build -o bin\tilegen.exe .\cmd\tilegen
-```
-
 Linux/macOS 交叉编译 Windows:
 
 ```bash
@@ -60,25 +51,11 @@ GOOS=windows GOARCH=amd64 go build -o bin/decoder.exe ./cmd/decoder
 
 ## 快速使用
 
-推荐屏幕传输命令：
+屏幕传输命令：
 
 ```bash
-./bin/encoder -i input.bin -RQ 120 -p 3 -r 0
-./bin/decoder -o output.bin -RQ 120 -p 3 -r 1
-```
-
-Windows 示例：
-
-```powershell
-.\bin\encoder.exe -i input.bin -RQ 120 -p 3 -r 0
-.\bin\decoder.exe -o output.bin -RQ 120 -p 3 -r 1
-```
-
-高吞吐实验配置示例：
-
-```bash
-./bin/encoder -i 10M.bin -f 200 -RQ 130 -p 8 -r 0
-./bin/decoder -o out.bin -f 120 -RQ 130 -p 8 -r 1
+./bin/encoder -i input.bin -RQ 120 -r 0
+./bin/decoder -o output.bin -RQ 120 -r 1
 ```
 
 PNG 离线验证：
@@ -87,33 +64,6 @@ PNG 离线验证：
 ./bin/encoder -png -i input.bin -o frames -RQ 80
 ./bin/decoder -png -i frames -o output.bin -RQ 80
 ```
-
-decoder 完成后会打印输出文件 MD5；如果源数据头中的 MD5 校验失败，会报错并拒绝静默接受错误结果。
-
-## QR Backend 对比
-
-默认 backend 是高速 symbols:
-
-```bash
-./bin/encoder -i input.bin -RQ 120
-./bin/decoder -o output.bin -RQ 120
-```
-
-使用标准 QR code backend:
-
-```bash
-./bin/encoder -backend qr -i input.bin -Q 33 -B 4
-./bin/decoder -backend qr -o output.bin -Q 33 -B 4
-```
-
-PNG 对比：
-
-```bash
-./bin/encoder -png -backend qr -i input.bin -o qr_frames -Q 33 -B 4
-./bin/decoder -png -backend qr -i qr_frames -o output.bin -Q 33 -B 4
-```
-
-说明：`-backend qr` 复用现有 zstd、packet CRC、ECC、喷泉码和文件 MD5 校验，只替换屏幕帧编码方式。QR 的 `-Q` 会映射到最接近的 QR version，用于速度和容量对比。
 
 ## 关键参数
 
@@ -165,17 +115,6 @@ PNG 对比：
 - `4s` 表示 `-shape-bits 4`
 - `8c` 表示 `-color-bits 8`
 
-内置可用符号集：
-
-```text
-8x8_5bit   32 symbols
-8x8_6bit   64 symbols
-6x6_4bit   16 symbols
-4x4_4bit   16 symbols
-4x4_3bit    8 symbols
-4x4_2bit    4 symbols
-```
-
 生成新符号：
 
 ```bash
@@ -184,7 +123,7 @@ PNG 对比：
 
 使用外部符号目录时，encoder 和 decoder 必须指定相同 `-symbols`、`-tile` 和 `-shape-bits`。
 
-## 进度日志
+## decode 输出
 
 decoder 每秒追加一行日志，方便保存后分析：
 
