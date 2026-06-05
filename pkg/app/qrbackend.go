@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 
+	"github.com/autocambar/autocambar/pkg/symbol"
 	"github.com/liyue201/goqr"
 	qrcode "github.com/skip2/go-qrcode"
 )
@@ -28,7 +29,7 @@ func newQRFrameCodec(q int, scale int) (*qrFrameCodec, error) {
 	}
 	version := qrVersionForQ(q)
 	modules := qrModulesForVersion(version)
-	size := (modules + qrQuietZoneModules*2) * scale
+	size := (modules + qrQuietZoneModules*2) * symbol.DefaultTileWidth * scale
 	capacity, err := qrPayloadCapacity(version)
 	if err != nil {
 		return nil, err

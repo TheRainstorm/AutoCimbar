@@ -18,10 +18,10 @@ func main() {
 	blockSize := flag.Int("block-size", 0, "fountain block size in bytes, 0 uses max frame payload")
 	eccPercent := flag.Int("ecc", 3, "per-frame Reed-Solomon ECC percentage; encoder must use the same value")
 	backend := flag.String("backend", app.BackendSymbols, "frame backend: symbols or qr")
-	colorBits := flag.Int("color-bits", 8, "color bits per cell: 0..8 uses 1..256 colors; encoder must use the same value")
+	colorBits := flag.Int("color-bits", 2, "color bits per cell: 0..8 uses 1..256 colors; encoder must use the same value")
 	shapeBits := flag.Int("shape-bits", 4, "shape bits per cell: 4 uses 16 symbols, 5 uses 32, 6 uses 64; encoder must use the same value")
-	tile := flag.String("tile", "4x4", "logical shape tile size WIDTHxHEIGHT; encoder must use the same value")
-	cell := flag.String("cell", "", "compact cell spec like 4t4s8c: tile width, color bits, shape bits")
+	tile := flag.String("tile", "8x8", "logical shape tile size WIDTHxHEIGHT; encoder must use the same value")
+	cell := flag.String("cell", "", "compact cell spec like 8t4s2c: tile width, color bits, shape bits")
 	cellShort := flag.String("c", "", "short alias for -cell")
 	packetsPerFrame := flag.Int("packets", 1, "independent packets per screen frame; encoder must use the same value")
 	packetsShort := flag.Int("p", 0, "short alias for -packets")
@@ -37,6 +37,11 @@ func main() {
 	symbolDir := flag.String("symbols", app.DefaultSymbolDir, "optional directory containing symbol PNG files named 00.png..; empty uses built-in symbols")
 	symbolDirShort := flag.String("s", "", "short alias for -symbols")
 	flag.Parse()
+
+	if err := app.ApplyINIConfig(flag.CommandLine, "decoder", shortAliases()); err != nil {
+		fmt.Fprintf(os.Stderr, "invalid config: %v\n", err)
+		os.Exit(1)
+	}
 
 	if *cellShort != "" {
 		*cell = *cellShort
@@ -131,4 +136,14 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Printf("decoded %s -> %s, md5=%s\n", *input, *output, md5)
+}
+
+func shortAliases() map[string][]string {
+	return map[string][]string{
+		"cell":    {"c"},
+		"packets": {"p"},
+		"R":       {"r"},
+		"fps":     {"f"},
+		"symbols": {"s"},
+	}
 }

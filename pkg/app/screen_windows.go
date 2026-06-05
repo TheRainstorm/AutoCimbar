@@ -97,9 +97,6 @@ func runScreenEncoderBackend(cfg ScreenEncodeConfig, source *screenFrameSource, 
 		width:  rect.Dx(),
 		height: rect.Dy(),
 	}
-	if err := win.updateFrame(); err != nil {
-		return err
-	}
 	activeNativeWindow = win
 	defer func() {
 		activeNativeWindow = nil
@@ -234,7 +231,17 @@ func (w *nativeWindow) paint(hwnd uintptr) {
 	hdc, _, _ := procBeginPaint.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if hdc != 0 && len(w.pixels) > 0 {
+	if hdc != 0 {
+		if len(w.pixels) == 0 {
+			if len(w.back) != w.width*w.height*4 {
+				w.back = make([]byte, w.width*w.height*4)
+				for i := 3; i < len(w.back); i += 4 {
+					w.back[i] = 0xff
+				}
+			}
+			w.pixels = w.back
+			w.back = nil
+		}
 		bmi := bitmapInfo{
 			Header: bitmapInfoHeader{
 				Size:        uint32(unsafe.Sizeof(bitmapInfoHeader{})),

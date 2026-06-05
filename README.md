@@ -29,6 +29,7 @@ moonlight 由于传输的是视频流和 RDP 本地渲染画面有较大差别�
 - Windows encoder 使用原生无边框置顶窗口，不需要浏览器
 - 常用 tile 符号集已编译进程序，单 exe 分发即可运行
 - 新增 `-backend qr`，可用标准 QR code backend 和 symbols backend 做速度对比
+- 支持从 `~/.autocimbar` 读取 INI 配置，命令行参数会覆盖配置文件
 
 ## 编译
 
@@ -75,7 +76,7 @@ PNG 离线验证：
 -Q              grid/cell 数；QR backend 下映射为 QR version
 -RQ             以 8x8 tile 为基准的参考 Q，tile 变小时自动增大实际 Q
 -B              cell 缩放倍数
--c, -cell       紧凑 cell 规格，默认 4t4s8c
+-c, -cell       紧凑 cell 规格，默认 8t4s2c
 -p, -packets    每帧独立 packet 数
 -ecc            单帧 Reed-Solomon ECC 百分比，默认 3
 -f, -fps        播放或截图帧率，默认 120
@@ -103,17 +104,19 @@ PNG 离线验证：
 
 ## Cell 和 Tile
 
-默认 `-c 4t4s8c` 等价于：
+默认 `-c 8t4s2c` 等价于：
 
 ```text
--tile 4x4 -shape-bits 4 -color-bits 8
+-tile 8x8 -shape-bits 4 -color-bits 2
 ```
 
 `-cell` 语法：
 
-- `4t` 表示 `-tile 4x4`
+- `8t` 表示 `-tile 8x8`
 - `4s` 表示 `-shape-bits 4`
-- `8c` 表示 `-color-bits 8`
+- `2c` 表示 `-color-bits 2`
+
+高吞吐实验仍可手动指定 `-c 4t4s8c`。
 
 生成新符号：
 
@@ -122,6 +125,36 @@ PNG 离线验证：
 ```
 
 使用外部符号目录时，encoder 和 decoder 必须指定相同 `-symbols`、`-tile` 和 `-shape-bits`。
+
+## 配置文件
+
+程序启动时会读取 `~/.autocimbar`。配置文件是 INI 格式，支持无 section、`[default]`、`[encoder]` 和 `[decoder]`。同名参数在命令行中显式指定时，会覆盖配置文件。
+
+示例：
+
+```ini
+[default]
+RQ = 120
+B = 1
+ecc = 3
+cell = 8t4s2c
+fps = 120
+
+[encoder]
+r = 0
+
+[decoder]
+r = 1
+timeout = 5m
+```
+
+配置 key 使用命令行参数名即可，例如 `RQ`、`cell`、`packets`、`color-bits`；下划线会按短横线处理。
+
+## QR backend 的 -Q 含义
+
+symbols backend 下，`-Q` 表示每边 cell 个数；默认 cell 是 `8x8` tile 时，图像宽度约为 `Q * 8 * B` 像素。
+
+QR backend 下，`-Q` 会映射到最接近的 QR version。QR 的真实模块数必须满足标准公式 `17 + 4 * version`，并且图像周围还有 quiet zone，所以它和 symbols backend 不是完全相同的 cell 个数。当前实现会按 `8x8` 参考 tile 缩放 QR 模块，让相同 `-Q` 下的显示面积更接近，但 QR 仍会因为 version 取整和 quiet zone 有尺寸差异。
 
 ## decode 输出
 

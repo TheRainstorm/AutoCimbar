@@ -29,6 +29,7 @@ Moonlight behaves differently from locally rendered RDP frames because it transp
 - Native borderless topmost encoder window on Windows, no browser required
 - Common tile symbol sets embedded in the executable, so a single exe can run directly
 - `-backend qr` for comparing the standard QR code backend with the symbols backend
+- Reads INI configuration from `~/.autocimbar`; explicit command-line options override it
 
 ## Build
 
@@ -73,7 +74,7 @@ Offline PNG verification:
 -Q              grid/cell count; QR backend maps it to a QR version
 -RQ             reference Q for 8x8 tiles; smaller tiles auto-scale actual Q
 -B              cell scale
--c, -cell       compact cell spec, default 4t4s8c
+-c, -cell       compact cell spec, default 8t4s2c
 -p, -packets    independent packets per frame
 -ecc            per-frame Reed-Solomon ECC percentage, default 3
 -f, -fps        display or capture FPS, default 120
@@ -101,17 +102,19 @@ List displays:
 
 ## Cell And Tile
 
-Default `-c 4t4s8c` means:
+Default `-c 8t4s2c` means:
 
 ```text
--tile 4x4 -shape-bits 4 -color-bits 8
+-tile 8x8 -shape-bits 4 -color-bits 2
 ```
 
 `-cell` syntax:
 
-- `4t` means `-tile 4x4`
+- `8t` means `-tile 8x8`
 - `4s` means `-shape-bits 4`
-- `8c` means `-color-bits 8`
+- `2c` means `-color-bits 2`
+
+High-throughput experiments can still specify `-c 4t4s8c` explicitly.
 
 Generate a new symbol set:
 
@@ -120,6 +123,36 @@ Generate a new symbol set:
 ```
 
 When using an external symbol directory, both sides must use the same `-symbols`, `-tile`, and `-shape-bits`.
+
+## Configuration File
+
+On startup, the programs read `~/.autocimbar`. The file uses INI syntax and supports no section, `[default]`, `[encoder]`, and `[decoder]`. Explicit command-line options override config values.
+
+Example:
+
+```ini
+[default]
+RQ = 120
+B = 1
+ecc = 3
+cell = 8t4s2c
+fps = 120
+
+[encoder]
+r = 0
+
+[decoder]
+r = 1
+timeout = 5m
+```
+
+Config keys use command-line option names such as `RQ`, `cell`, `packets`, and `color-bits`; underscores are treated as dashes.
+
+## QR Backend `-Q`
+
+With the symbols backend, `-Q` is the number of cells per side. With the default `8x8` tile, image width is roughly `Q * 8 * B` pixels.
+
+With the QR backend, `-Q` maps to the closest QR version. Real QR module count must follow the standard formula `17 + 4 * version`, and the image also includes a quiet zone. Therefore it is not the same cell count as the symbols backend. The current implementation scales QR modules by the `8x8` reference tile so the visible area is closer for the same `-Q`, but version rounding and quiet zone still make the exact size different.
 
 ## Decode Output
 
