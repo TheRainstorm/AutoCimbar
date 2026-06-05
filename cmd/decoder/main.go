@@ -26,7 +26,7 @@ func main() {
 	packetsShort := flag.Int("p", 0, "short alias for -packets")
 	screen := flag.Bool("screen", true, "capture frames from screen instead of reading PNG files")
 	pngMode := flag.Bool("png", false, "read PNG frames instead of screen mode")
-	region := flag.String("R", "0:-0:-0", "screen capture region SCREEN:X:Y, negative values anchor from right/bottom")
+	region := flag.String("R", "0", "screen capture region SCREEN, X:Y or SCREEN:X:Y; c centers an axis")
 	regionShort := flag.String("r", "", "short alias for -R")
 	fps := flag.Int("fps", 120, "screen capture rate")
 	fpsShort := flag.Int("f", 0, "short alias for -fps")

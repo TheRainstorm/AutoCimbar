@@ -21,6 +21,7 @@ func TestResolveAxis(t *testing.T) {
 		{name: "right edge", token: "-0", min: 100, max: 500, size: 80, want: 420},
 		{name: "right offset", token: "-15", min: 100, max: 500, size: 80, want: 405},
 		{name: "plain zero", token: "0", min: -200, max: 300, size: 50, want: -200},
+		{name: "center", token: "c", min: 100, max: 500, size: 80, want: 260},
 	}
 
 	for _, tt := range tests {
@@ -47,8 +48,10 @@ func TestParseRegionSpec(t *testing.T) {
 		wantErr             bool
 	}{
 		{name: "implicit screen", region: "-0:-0", allowImplicitScreen: true, wantScreen: 0, wantX: "-0", wantY: "-0"},
+		{name: "screen only", region: "1", allowImplicitScreen: true, wantScreen: 1, wantX: "-0", wantY: "-0"},
+		{name: "implicit center", region: "c:c", allowImplicitScreen: true, wantScreen: 0, wantX: "c", wantY: "c"},
 		{name: "explicit screen", region: "2:10:-5", allowImplicitScreen: true, wantScreen: 2, wantX: "10", wantY: "-5"},
-		{name: "decoder requires screen", region: "10:-5", allowImplicitScreen: false, wantErr: true},
+		{name: "explicit center", region: "1:c:c", allowImplicitScreen: false, wantScreen: 1, wantX: "c", wantY: "c"},
 		{name: "decoder explicit screen", region: "1:10:-5", allowImplicitScreen: false, wantScreen: 1, wantX: "10", wantY: "-5"},
 	}
 

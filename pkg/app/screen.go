@@ -528,25 +528,22 @@ func (s *screenFrameSource) notePresented() {
 
 func ResolveEncoderRegion(region string, width int, height int) (image.Rectangle, error) {
 	if region == "" {
-		region = "0:0"
+		region = "0"
 	}
 	return resolveScreenRegion(region, width, height, true, "encoder")
 }
 
 func ResolveDecoderRegion(region string, width int, height int) (image.Rectangle, error) {
 	if region == "" {
-		return image.Rectangle{}, fmt.Errorf("decoder region must be SCREEN:X:Y")
+		region = "0"
 	}
-	return resolveScreenRegion(region, width, height, false, "decoder")
+	return resolveScreenRegion(region, width, height, true, "decoder")
 }
 
 func resolveScreenRegion(region string, width int, height int, allowImplicitScreen bool, label string) (image.Rectangle, error) {
 	screenIndex, xToken, yToken, err := parseRegionSpec(region, allowImplicitScreen)
 	if err != nil {
-		if allowImplicitScreen {
-			return image.Rectangle{}, fmt.Errorf("%s region must be X:Y or SCREEN:X:Y: %w", label, err)
-		}
-		return image.Rectangle{}, fmt.Errorf("%s region must be SCREEN:X:Y: %w", label, err)
+		return image.Rectangle{}, fmt.Errorf("%s region must be SCREEN, X:Y or SCREEN:X:Y: %w", label, err)
 	}
 	if screenIndex < 0 || screenIndex >= screenshot.NumActiveDisplays() {
 		return image.Rectangle{}, fmt.Errorf("screen index %d out of range", screenIndex)
@@ -566,6 +563,12 @@ func resolveScreenRegion(region string, width int, height int, allowImplicitScre
 func parseRegionSpec(region string, allowImplicitScreen bool) (screenIndex int, xToken string, yToken string, err error) {
 	parts := strings.Split(region, ":")
 	switch len(parts) {
+	case 1:
+		screenIndex, err := strconv.Atoi(parts[0])
+		if err != nil {
+			return 0, "", "", fmt.Errorf("invalid screen index: %w", err)
+		}
+		return screenIndex, "-0", "-0", nil
 	case 2:
 		if !allowImplicitScreen {
 			return 0, "", "", fmt.Errorf("missing screen index")
@@ -585,6 +588,9 @@ func parseRegionSpec(region string, allowImplicitScreen bool) (screenIndex int, 
 func resolveAxis(token string, min int, max int, size int) (int, error) {
 	if token == "" {
 		return 0, fmt.Errorf("empty coordinate")
+	}
+	if strings.EqualFold(token, "c") {
+		return min + (max-min-size)/2, nil
 	}
 	if strings.HasPrefix(token, "-") {
 		offsetText := strings.TrimPrefix(token, "-")

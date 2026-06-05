@@ -159,8 +159,8 @@ decoder 也会在喷泉码恢复完成后校验内置的文件级 MD5；校验�
 参数说明：
 
 - 默认使用屏幕播放模式，不写 PNG 文件；需要 PNG 模式时使用 `-png`
-- `-R X:Y` 或 `-R SCREEN:X:Y`：播放窗口位置；省略 `SCREEN` 时默认主屏 0
-- 负数从该屏幕右/下边缘定位；`0:-0:-0` 表示主屏右下角贴边
+- `-R SCREEN`、`-R X:Y` 或 `-R SCREEN:X:Y`：播放窗口位置；省略 `SCREEN` 时默认主屏 0
+- `SCREEN` 单独出现时默认右下角；负数从该屏幕右/下边缘定位；`c` 表示该轴居中
 - `-fps`：窗口刷新帧率
 - `-color-bits`：颜色通道位数，`0..8` 对应 1..256 色；encoder 和 decoder 必须一致
 - `-shape-bits`：形状通道位数；默认 4，5/6 需要使用匹配的 `-symbols` 目录
@@ -182,7 +182,7 @@ decoder 也会在喷泉码恢复完成后校验内置的文件级 MD5；校验�
 参数说明：
 
 - 默认使用截图解码模式；需要 PNG 模式时使用 `-png`
-- `-R SCREEN:X:Y`：截图区域
+- `-R SCREEN`、`-R X:Y` 或 `-R SCREEN:X:Y`：截图区域
 - `SCREEN`：屏幕编号，从 0 开始
 - `X:Y`：截图区域左上角；负数从该屏幕右/下边缘定位
 - `-timeout`：等待足够喷泉帧的最长时间
@@ -196,7 +196,9 @@ decoder 也会在喷泉码恢复完成后校验内置的文件级 MD5；校验�
 示例：
 
 - `-R 0:0:0`：主屏左上角
-- `-R 0:-0:-0`：主屏右下角
+- `-R 0` 或 `-R 0:-0:-0`：主屏右下角
+- `-R c:c`：主屏居中
+- `-R 1:c:c`：第 2 块屏幕居中
 - `-R 1:100:200`：第 2 块屏幕，偏移 `(100, 200)`
 
 两端必须使用一致的 `Q`、`B`、`-ecc`、`-color-bits`、`-shape-bits`、`-tile`、`-symbols` 和 `-packets`。文件大小会在当前线性喷泉码帧头中发送，decoder 不需要手动指定。
@@ -231,7 +233,7 @@ decoder 进度中的 `cap`、`dec`、`pkt v/r/u`、`bad`、`spd`、`ema` 含义�
 -p             -packets 的短参数
 -no-zstd       关闭默认 zstd 压缩
 -png           启用 PNG 帧模式；默认是屏幕播放模式
--R             屏幕播放位置，格式 X:Y 或 SCREEN:X:Y
+-R             屏幕播放位置，格式 SCREEN、X:Y 或 SCREEN:X:Y；c 表示居中
 -r             -R 的短参数
 -fps           屏幕播放帧率，默认 120
 -f             -fps 的短参数
@@ -260,7 +262,7 @@ decoder 进度中的 `cap`、`dec`、`pkt v/r/u`、`bad`、`spd`、`ema` 含义�
 -packets       屏幕模式每张图携带的独立 packet 数，默认 1；必须与 encoder 一致
 -p             -packets 的短参数
 -png           启用 PNG 帧模式；默认是截图解码模式
--R             截图区域，格式 SCREEN:X:Y
+-R             截图区域，格式 SCREEN、X:Y 或 SCREEN:X:Y；c 表示居中
 -r             -R 的短参数
 -fps           截图频率，默认 120
 -f             -fps 的短参数

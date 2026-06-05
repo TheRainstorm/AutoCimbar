@@ -28,7 +28,7 @@ func main() {
 	noZstd := flag.Bool("no-zstd", false, "disable default zstd source compression")
 	screen := flag.Bool("screen", true, "show frames in a borderless screen window instead of writing PNG files")
 	pngMode := flag.Bool("png", false, "write PNG frames instead of screen mode")
-	region := flag.String("R", "0:-0:-0", "screen window region X:Y or SCREEN:X:Y, negative values anchor from right/bottom")
+	region := flag.String("R", "0", "screen window region SCREEN, X:Y or SCREEN:X:Y; c centers an axis")
 	regionShort := flag.String("r", "", "short alias for -R")
 	fps := flag.Int("fps", 120, "screen frame rate")
 	fpsShort := flag.Int("f", 0, "short alias for -fps")
