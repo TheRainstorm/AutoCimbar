@@ -12,6 +12,7 @@ import (
 
 	"github.com/autocambar/autocambar/pkg/codec"
 	"github.com/autocambar/autocambar/pkg/fountain"
+	"github.com/autocambar/autocambar/pkg/symbol"
 	"github.com/kbinani/screenshot"
 )
 
@@ -24,6 +25,8 @@ type ScreenEncodeConfig struct {
 	ECCPercent      int
 	NoZstd          bool
 	ColorBits       int
+	ShapeBits       int
+	Tile            string
 	PacketsPerFrame int
 	Region          string
 	FPS             int
@@ -40,6 +43,8 @@ type ScreenDecodeConfig struct {
 	BlockSize       int
 	ECCPercent      int
 	ColorBits       int
+	ShapeBits       int
+	Tile            string
 	PacketsPerFrame int
 	Region          string
 	FPS             int
@@ -65,8 +70,16 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 	}
 	colorBits := normalizeColorBits(cfg.ColorBits)
 	packetsPerFrame := normalizePacketsPerFrame(cfg.PacketsPerFrame)
+	shapeBits := cfg.ShapeBits
+	if shapeBits == 0 {
+		shapeBits = symbol.DefaultShapeBits
+	}
+	spec, err := ParseTileSpec(cfg.Tile, shapeBits)
+	if err != nil {
+		return nil, err
+	}
 
-	payloadCapacity, err := PayloadCapacityBytesWithECCAndColorBitsAndPackets(cfg.GridSize, cfg.ECCPercent, colorBits, packetsPerFrame)
+	payloadCapacity, err := PayloadCapacityBytesWithECCAndSpecAndPackets(cfg.GridSize, cfg.ECCPercent, spec, colorBits, packetsPerFrame)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +90,7 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 	if blockSize <= 0 || blockSize > payloadCapacity {
 		return nil, fmt.Errorf("block size %d exceeds frame payload capacity %d", blockSize, payloadCapacity)
 	}
-	packetCodec, err := NewFramePacketCodecWithColorBitsAndPackets(cfg.GridSize, cfg.ECCPercent, blockSize, colorBits, packetsPerFrame)
+	packetCodec, err := NewFramePacketCodecWithSpecAndPackets(cfg.GridSize, cfg.ECCPercent, blockSize, spec, colorBits, packetsPerFrame)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +105,7 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 		return nil, err
 	}
 
-	symRec, err := LoadLibcimbarSymbols(cfg.SymbolDir)
+	symRec, err := LoadSymbols(cfg.SymbolDir, spec)
 	if err != nil {
 		return nil, err
 	}
@@ -100,12 +113,12 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	codecEnc, err := codec.NewEncoderWithColorBits(symRec, colorRec, CellSize(cfg.Scale), cfg.GridSize, colorBits)
+	codecEnc, err := codec.NewEncoderWithColorBits(symRec, colorRec, CellSizeForSpec(cfg.Scale, spec), cfg.GridSize, colorBits)
 	if err != nil {
 		return nil, err
 	}
 
-	imageSize := cfg.GridSize * CellSize(cfg.Scale)
+	imageSize := cfg.GridSize * CellSizeForSpec(cfg.Scale, spec)
 	rect, err := ResolveEncoderRegion(cfg.Region, imageSize, imageSize)
 	if err != nil {
 		return nil, err
@@ -114,9 +127,9 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 	result := &EncodeResult{
 		GridSize:        cfg.GridSize,
 		Scale:           cfg.Scale,
-		CellSize:        CellSize(cfg.Scale),
+		CellSize:        CellSizeForSpec(cfg.Scale, spec),
 		ImageSize:       imageSize,
-		FrameCapacity:   GridCapacityBytesWithColorBits(cfg.GridSize, colorBits),
+		FrameCapacity:   GridCapacityBytesWithSpec(cfg.GridSize, spec, colorBits),
 		PayloadCapacity: payloadCapacity,
 		ECCPercent:      cfg.ECCPercent,
 		ECCBytes:        packetCodec.ParitySize(),
@@ -129,6 +142,9 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 		MD5:             md5Hex,
 		Compression:     sourceCompression(compress),
 		ColorBits:       colorBits,
+		ShapeBits:       spec.ShapeBits,
+		TileWidth:       spec.Width,
+		TileHeight:      spec.Height,
 		PacketsPerFrame: packetsPerFrame,
 	}
 	progress := newScreenEncoderProgress(cfg.Progress, result)
@@ -164,8 +180,16 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 	}
 	colorBits := normalizeColorBits(cfg.ColorBits)
 	packetsPerFrame := normalizePacketsPerFrame(cfg.PacketsPerFrame)
+	shapeBits := cfg.ShapeBits
+	if shapeBits == 0 {
+		shapeBits = symbol.DefaultShapeBits
+	}
+	spec, err := ParseTileSpec(cfg.Tile, shapeBits)
+	if err != nil {
+		return err
+	}
 
-	payloadCapacity, err := PayloadCapacityBytesWithECCAndColorBitsAndPackets(cfg.GridSize, cfg.ECCPercent, colorBits, packetsPerFrame)
+	payloadCapacity, err := PayloadCapacityBytesWithECCAndSpecAndPackets(cfg.GridSize, cfg.ECCPercent, spec, colorBits, packetsPerFrame)
 	if err != nil {
 		return err
 	}
@@ -176,12 +200,12 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 	if blockSize <= 0 || blockSize > payloadCapacity {
 		return fmt.Errorf("block size %d exceeds frame payload capacity %d", blockSize, payloadCapacity)
 	}
-	packetCodec, err := NewFramePacketCodecWithColorBitsAndPackets(cfg.GridSize, cfg.ECCPercent, blockSize, colorBits, packetsPerFrame)
+	packetCodec, err := NewFramePacketCodecWithSpecAndPackets(cfg.GridSize, cfg.ECCPercent, blockSize, spec, colorBits, packetsPerFrame)
 	if err != nil {
 		return err
 	}
 
-	symRec, err := LoadLibcimbarSymbols(cfg.SymbolDir)
+	symRec, err := LoadSymbols(cfg.SymbolDir, spec)
 	if err != nil {
 		return err
 	}
@@ -189,7 +213,7 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 	if err != nil {
 		return err
 	}
-	codecDec, err := codec.NewDecoderWithColorBits(symRec, colorRec, CellSize(cfg.Scale), cfg.GridSize, colorBits)
+	codecDec, err := codec.NewDecoderWithColorBits(symRec, colorRec, CellSizeForSpec(cfg.Scale, spec), cfg.GridSize, colorBits)
 	if err != nil {
 		return err
 	}
@@ -197,7 +221,7 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 	blockCount := 0
 	fileSize := -1
 
-	imageSize := cfg.GridSize * CellSize(cfg.Scale)
+	imageSize := cfg.GridSize * CellSizeForSpec(cfg.Scale, spec)
 	rect, err := ResolveDecoderRegion(cfg.Region, imageSize, imageSize)
 	if err != nil {
 		return err

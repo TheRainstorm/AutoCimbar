@@ -45,13 +45,25 @@ var builtinLibcimbarSymbolHashes = [symbol.NumSymbols]uint64{
 }
 
 func LoadLibcimbarSymbols(dir string) (*symbol.Recognizer, error) {
+	return LoadSymbols(dir, symbol.DefaultSpec())
+}
+
+func LoadSymbols(dir string, spec symbol.Spec) (*symbol.Recognizer, error) {
+	if err := spec.Validate(); err != nil {
+		return nil, err
+	}
 	if dir == "" {
-		return LoadBuiltinLibcimbarSymbols()
+		if spec == symbol.DefaultSpec() {
+			return LoadBuiltinLibcimbarSymbols()
+		}
+		return nil, fmt.Errorf("built-in symbols only support tile %dx%d shape-bits=%d; provide -symbols for tile %dx%d shape-bits=%d",
+			symbol.DefaultTileWidth, symbol.DefaultTileHeight, symbol.DefaultShapeBits, spec.Width, spec.Height, spec.ShapeBits)
 	}
 
-	rec := symbol.NewRecognizer()
+	rec := symbol.NewRecognizerWithSpec(spec)
 
-	for id, name := range symbolFileNames {
+	for id := 0; id < spec.SymbolCount(); id++ {
+		name := fmt.Sprintf("%02x.png", id)
 		path := filepath.Join(dir, name)
 		f, err := os.Open(path)
 		if err != nil {

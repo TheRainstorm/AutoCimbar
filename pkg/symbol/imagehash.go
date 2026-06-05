@@ -9,22 +9,21 @@ import (
 // ImageHash 计算 8x8 图像的阈值化 hash
 // 参考 libcimbar 的实现，使用简单的阈值化方法
 func ImageHash(img image.Image) uint64 {
-	// 1. 确保图像是 8x8（如果不是则需要外部先缩放）
-	bounds := img.Bounds()
-	if bounds.Dx() != 8 || bounds.Dy() != 8 {
-		// 这里假设调用者已经缩放好了
-		// 实际使用时应该先调用 resize
-	}
+	return ImageHashWithSize(img, 8, 8)
+}
 
+// ImageHashWithSize 计算指定 tile 尺寸图像的阈值化 hash。
+// 目前支持最多 64 个采样点，因此 8x8、6x6、4x4 都可以放进 uint64。
+func ImageHashWithSize(img image.Image, width int, height int) uint64 {
 	// 2. 计算平均灰度作为阈值
 	threshold := computeAverageGray(img)
 
-	// 3. 生成 64-bit hash
+	// 3. 生成 hash
 	// 每个像素大于阈值则为 1，否则为 0
 	// 从左到右，从上到下
 	var hash uint64
-	for y := 0; y < 8; y++ {
-		for x := 0; x < 8; x++ {
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
 			gray := getGrayscale(img, x, y)
 			bit := uint64(0)
 			if gray > threshold {
@@ -78,17 +77,21 @@ func getGrayscale(img image.Image, x, y int) uint8 {
 // ResizeToTile 将图像缩放到 8x8
 // 使用最近邻插值，保持清晰边缘
 func ResizeToTile(img image.Image) *image.Gray {
+	return ResizeToTileWithSize(img, 8, 8)
+}
+
+// ResizeToTileWithSize 将图像缩放到指定 tile 尺寸。
+func ResizeToTileWithSize(img image.Image, width int, height int) *image.Gray {
 	bounds := img.Bounds()
 	srcW, srcH := bounds.Dx(), bounds.Dy()
 
-	// 创建 8x8 的灰度图
-	dst := image.NewGray(image.Rect(0, 0, 8, 8))
+	dst := image.NewGray(image.Rect(0, 0, width, height))
 
-	for y := 0; y < 8; y++ {
-		for x := 0; x < 8; x++ {
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
 			// 最近邻插值
-			srcX := x * srcW / 8
-			srcY := y * srcH / 8
+			srcX := x * srcW / width
+			srcY := y * srcH / height
 
 			gray := getGrayscale(img, bounds.Min.X+srcX, bounds.Min.Y+srcY)
 			dst.SetGray(x, y, color.Gray{Y: gray})

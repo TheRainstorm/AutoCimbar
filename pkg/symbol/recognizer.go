@@ -10,35 +10,104 @@ type SymbolID uint8
 
 const (
 	// NumSymbols 符号总数（16 个符号编码 4 bits）
-	NumSymbols = 16
+	NumSymbols        = 16
+	DefaultShapeBits  = 4
+	DefaultTileWidth  = 8
+	DefaultTileHeight = 8
 )
+
+type Spec struct {
+	Width     int
+	Height    int
+	ShapeBits int
+}
+
+func DefaultSpec() Spec {
+	return Spec{
+		Width:     DefaultTileWidth,
+		Height:    DefaultTileHeight,
+		ShapeBits: DefaultShapeBits,
+	}
+}
+
+func NewSpec(width int, height int, shapeBits int) (Spec, error) {
+	spec := Spec{
+		Width:     width,
+		Height:    height,
+		ShapeBits: shapeBits,
+	}
+	if err := spec.Validate(); err != nil {
+		return Spec{}, err
+	}
+	return spec, nil
+}
+
+func (s Spec) Validate() error {
+	if s.Width <= 0 || s.Height <= 0 {
+		return fmt.Errorf("tile size must be > 0, got %dx%d", s.Width, s.Height)
+	}
+	if s.Width*s.Height > 64 {
+		return fmt.Errorf("tile size %dx%d has %d bits, max is 64", s.Width, s.Height, s.Width*s.Height)
+	}
+	if s.ShapeBits <= 0 || s.ShapeBits > 8 {
+		return fmt.Errorf("shape bits must be 1..8, got %d", s.ShapeBits)
+	}
+	return nil
+}
+
+func (s Spec) SymbolCount() int {
+	if s.ShapeBits <= 0 {
+		return 0
+	}
+	return 1 << s.ShapeBits
+}
+
+func (s Spec) TileBits() int {
+	return s.Width * s.Height
+}
 
 // Recognizer 符号识别器
 type Recognizer struct {
-	// 16 个参考符号的 image hash
-	hashes [NumSymbols]uint64
-	// 16 个参考符号的 8x8 模板（用于绘制）
-	templates [NumSymbols]*image.Gray
+	spec      Spec
+	hashes    []uint64
+	templates []*image.Gray
 }
 
 // NewRecognizer 创建新的符号识别器
 func NewRecognizer() *Recognizer {
-	return &Recognizer{}
+	return NewRecognizerWithSpec(DefaultSpec())
+}
+
+func NewRecognizerWithSpec(spec Spec) *Recognizer {
+	if err := spec.Validate(); err != nil {
+		panic(err)
+	}
+	return &Recognizer{
+		spec:      spec,
+		hashes:    make([]uint64, spec.SymbolCount()),
+		templates: make([]*image.Gray, spec.SymbolCount()),
+	}
+}
+
+func (r *Recognizer) Spec() Spec {
+	return r.spec
+}
+
+func (r *Recognizer) SymbolCount() int {
+	return len(r.hashes)
 }
 
 // LoadSymbol 加载单个符号
 // id: 符号 ID (0-15)
 // img: 符号图像（会被缩放到 8x8）
 func (r *Recognizer) LoadSymbol(id SymbolID, img image.Image) error {
-	if id >= NumSymbols {
-		return fmt.Errorf("invalid symbol ID: %d (must be 0-15)", id)
+	if int(id) >= r.SymbolCount() {
+		return fmt.Errorf("invalid symbol ID: %d (must be 0-%d)", id, r.SymbolCount()-1)
 	}
 
-	// 缩放到 8x8
-	tile := ResizeToTile(img)
+	tile := ResizeToTileWithSize(img, r.spec.Width, r.spec.Height)
 
-	// 计算 image hash
-	hash := ImageHash(tile)
+	hash := ImageHashWithSize(tile, r.spec.Width, r.spec.Height)
 
 	// 保存
 	r.hashes[id] = hash
@@ -51,26 +120,23 @@ func (r *Recognizer) LoadSymbol(id SymbolID, img image.Image) error {
 // cellImg: 待识别的 cell 图像
 // 返回：最匹配的符号 ID 和汉明距离
 func (r *Recognizer) Recognize(cellImg image.Image) (SymbolID, int) {
-	// 缩放到 8x8
-	tile := ResizeToTile(cellImg)
+	tile := ResizeToTileWithSize(cellImg, r.spec.Width, r.spec.Height)
 
-	// 计算 image hash
-	hash := ImageHash(tile)
+	hash := ImageHashWithSize(tile, r.spec.Width, r.spec.Height)
 
 	return r.RecognizeHash(hash)
 }
 
 // RecognizeHash 根据已计算好的 8x8 image hash 识别符号。
 func (r *Recognizer) RecognizeHash(hash uint64) (SymbolID, int) {
-	// 与 16 个参考符号比较汉明距离
-	minDist := 65 // 最大汉明距离是 64
+	minDist := r.spec.TileBits() + 1
 	bestID := SymbolID(0)
 
-	for id := SymbolID(0); id < NumSymbols; id++ {
+	for id := 0; id < r.SymbolCount(); id++ {
 		dist := HammingDistance(hash, r.hashes[id])
 		if dist < minDist {
 			minDist = dist
-			bestID = id
+			bestID = SymbolID(id)
 		}
 	}
 
@@ -79,7 +145,7 @@ func (r *Recognizer) RecognizeHash(hash uint64) (SymbolID, int) {
 
 // GetTemplate 获取符号的 8x8 模板
 func (r *Recognizer) GetTemplate(id SymbolID) (*image.Gray, error) {
-	if id >= NumSymbols {
+	if int(id) >= r.SymbolCount() {
 		return nil, fmt.Errorf("invalid symbol ID: %d", id)
 	}
 
@@ -92,7 +158,7 @@ func (r *Recognizer) GetTemplate(id SymbolID) (*image.Gray, error) {
 
 // GetHash 获取符号的 image hash
 func (r *Recognizer) GetHash(id SymbolID) (uint64, error) {
-	if id >= NumSymbols {
+	if int(id) >= r.SymbolCount() {
 		return 0, fmt.Errorf("invalid symbol ID: %d", id)
 	}
 
@@ -102,18 +168,18 @@ func (r *Recognizer) GetHash(id SymbolID) (uint64, error) {
 // VerifyHammingDistances 验证所有符号对的汉明距离
 // 返回最小汉明距离
 func (r *Recognizer) VerifyHammingDistances() (minDist int, pairs [][2]SymbolID) {
-	minDist = 65
+	minDist = r.spec.TileBits() + 1
 	pairs = make([][2]SymbolID, 0)
 
-	for i := SymbolID(0); i < NumSymbols; i++ {
-		for j := i + 1; j < NumSymbols; j++ {
+	for i := 0; i < r.SymbolCount(); i++ {
+		for j := i + 1; j < r.SymbolCount(); j++ {
 			dist := HammingDistance(r.hashes[i], r.hashes[j])
 
 			if dist < minDist {
 				minDist = dist
-				pairs = [][2]SymbolID{{i, j}}
+				pairs = [][2]SymbolID{{SymbolID(i), SymbolID(j)}}
 			} else if dist == minDist {
-				pairs = append(pairs, [2]SymbolID{i, j})
+				pairs = append(pairs, [2]SymbolID{SymbolID(i), SymbolID(j)})
 			}
 		}
 	}
@@ -123,7 +189,7 @@ func (r *Recognizer) VerifyHammingDistances() (minDist int, pairs [][2]SymbolID)
 
 // IsLoaded 检查所有符号是否已加载
 func (r *Recognizer) IsLoaded() bool {
-	for id := SymbolID(0); id < NumSymbols; id++ {
+	for id := 0; id < r.SymbolCount(); id++ {
 		if r.templates[id] == nil {
 			return false
 		}
@@ -144,7 +210,7 @@ func (r *Recognizer) GetStats() Stats {
 	stats := Stats{}
 
 	// 计算已加载的符号数量
-	for id := SymbolID(0); id < NumSymbols; id++ {
+	for id := 0; id < r.SymbolCount(); id++ {
 		if r.templates[id] != nil {
 			stats.LoadedSymbols++
 		}
@@ -154,13 +220,13 @@ func (r *Recognizer) GetStats() Stats {
 	if stats.LoadedSymbols >= 2 {
 		totalDist := 0
 		count := 0
-		minDist := 65
+		minDist := r.spec.TileBits() + 1
 
-		for i := SymbolID(0); i < NumSymbols; i++ {
+		for i := 0; i < r.SymbolCount(); i++ {
 			if r.templates[i] == nil {
 				continue
 			}
-			for j := i + 1; j < NumSymbols; j++ {
+			for j := i + 1; j < r.SymbolCount(); j++ {
 				if r.templates[j] == nil {
 					continue
 				}
@@ -171,9 +237,9 @@ func (r *Recognizer) GetStats() Stats {
 
 				if dist < minDist {
 					minDist = dist
-					stats.ClosestPairs = [][2]SymbolID{{i, j}}
+					stats.ClosestPairs = [][2]SymbolID{{SymbolID(i), SymbolID(j)}}
 				} else if dist == minDist {
-					stats.ClosestPairs = append(stats.ClosestPairs, [2]SymbolID{i, j})
+					stats.ClosestPairs = append(stats.ClosestPairs, [2]SymbolID{SymbolID(i), SymbolID(j)})
 				}
 			}
 		}

@@ -17,13 +17,15 @@ func main() {
 	blockSize := flag.Int("block-size", 0, "fountain block size in bytes, 0 uses max frame payload")
 	eccPercent := flag.Int("ecc", 3, "per-frame Reed-Solomon ECC percentage; encoder must use the same value")
 	colorBits := flag.Int("color-bits", 2, "color bits per cell: 0..8 uses 1..256 colors; encoder must use the same value")
+	shapeBits := flag.Int("shape-bits", 4, "shape bits per cell: 4 uses 16 symbols, 5 uses 32, 6 uses 64; encoder must use the same value")
+	tile := flag.String("tile", "8x8", "logical shape tile size WIDTHxHEIGHT; encoder must use the same value")
 	packetsPerFrame := flag.Int("packets", 1, "independent packets per screen frame; encoder must use the same value")
 	screen := flag.Bool("screen", false, "capture frames from screen instead of reading PNG files")
 	region := flag.String("R", "", "screen capture region SCREEN:X:Y, negative values anchor from right/bottom")
 	fps := flag.Int("fps", 60, "screen capture rate")
 	timeout := flag.Duration("timeout", 5*time.Minute, "screen decode timeout")
 	listDisplays := flag.Bool("list-displays", false, "list detected display indexes and bounds")
-	symbolDir := flag.String("symbols", app.DefaultSymbolDir, "optional directory containing 16 libcimbar bitmap symbols; empty uses built-in symbols")
+	symbolDir := flag.String("symbols", app.DefaultSymbolDir, "optional directory containing symbol PNG files named 00.png..; empty uses built-in 8x8/4bit symbols")
 	flag.Parse()
 
 	if *listDisplays {
@@ -46,6 +48,8 @@ func main() {
 			BlockSize:       *blockSize,
 			ECCPercent:      *eccPercent,
 			ColorBits:       *colorBits,
+			ShapeBits:       *shapeBits,
+			Tile:            *tile,
 			PacketsPerFrame: *packetsPerFrame,
 			Region:          *region,
 			FPS:             *fps,
@@ -64,7 +68,12 @@ func main() {
 		return
 	}
 
-	if err := app.DecodePNGFramesToFileWithColorBits(*input, *output, *q, *b, *symbolDir, *blockSize, *eccPercent, *colorBits); err != nil {
+	spec, err := app.ParseTileSpec(*tile, *shapeBits)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "invalid tile spec: %v\n", err)
+		os.Exit(1)
+	}
+	if err := app.DecodePNGFramesToFileWithSpec(*input, *output, *q, *b, *symbolDir, *blockSize, *eccPercent, *colorBits, spec); err != nil {
 		fmt.Fprintf(os.Stderr, "decoder failed: %v\n", err)
 		os.Exit(1)
 	}

@@ -24,7 +24,7 @@ const CellBits = 6
 const ColorBits = 2
 
 // ShapeBits 形状位数 (16 种形状 = 4 bits)
-const ShapeBits = 4
+const ShapeBits = symbol.DefaultShapeBits
 
 // Encoder 编码器
 type Encoder struct {
@@ -33,10 +33,14 @@ type Encoder struct {
 	cellSize         int // cell 的屏幕像素大小 (4 * B)
 	gridSize         int // Q 参数，grid 的大小
 	colorBits        int
+	shapeBits        int
 	cellBits         int
 	colorMask        uint16
-	templateMasks    [symbol.NumSymbols][64]bool
-	templatesReady   [symbol.NumSymbols]bool
+	shapeMask        uint16
+	tileWidth        int
+	tileHeight       int
+	templateMasks    [][]bool
+	templatesReady   []bool
 	tileCache        [][]byte
 	tileCacheBGRA    [][]byte
 }
@@ -64,8 +68,12 @@ func NewEncoderWithColorBits(symbolRecognizer *symbol.Recognizer, colorRecognize
 		cellSize:         cellSize,
 		gridSize:         gridSize,
 		colorBits:        colorBits,
-		cellBits:         ShapeBits + colorBits,
+		shapeBits:        symbolRecognizer.Spec().ShapeBits,
+		cellBits:         symbolRecognizer.Spec().ShapeBits + colorBits,
 		colorMask:        uint16((1 << colorBits) - 1),
+		shapeMask:        uint16((1 << symbolRecognizer.Spec().ShapeBits) - 1),
+		tileWidth:        symbolRecognizer.Spec().Width,
+		tileHeight:       symbolRecognizer.Spec().Height,
 	}
 	e.templateMasks, e.templatesReady = buildTemplateMasks(symbolRecognizer)
 	e.buildTileCache()
@@ -138,8 +146,8 @@ func (e *Encoder) bytesToCells(data []byte) ([]Cell, error) {
 			bits <<= (e.cellBits - bitsRead)
 		}
 
-		colorID := colorpkg.ColorID((bits >> ShapeBits) & e.colorMask)
-		shapeID := symbol.SymbolID(bits & 0x0F)
+		colorID := colorpkg.ColorID((bits >> e.shapeBits) & e.colorMask)
+		shapeID := symbol.SymbolID(bits & e.shapeMask)
 
 		cells[i] = Cell{
 			Color: colorID,
@@ -179,9 +187,9 @@ func (e *Encoder) renderData(data []byte, numCells int) *image.RGBA {
 
 	for i := 0; i < numCells; i++ {
 		bits := readCellBits(data, i, e.cellBits)
-		colorID := bits >> ShapeBits
-		shapeID := bits & 0x0f
-		tile := e.tileCache[int(colorID)*symbol.NumSymbols+int(shapeID)]
+		colorID := bits >> e.shapeBits
+		shapeID := bits & e.shapeMask
+		tile := e.tileCache[int(colorID)*e.symbolRecognizer.SymbolCount()+int(shapeID)]
 		cellX := i % e.gridSize
 		cellY := i / e.gridSize
 		copyTileRGBA(img.Pix, img.Stride, cellX*e.cellSize*4, cellY*e.cellSize, e.cellSize, tile)
@@ -207,9 +215,9 @@ func (e *Encoder) renderDataBGRA(data []byte, numCells int, dst []byte) []byte {
 	stride := imageSize * 4
 	for i := 0; i < numCells; i++ {
 		bits := readCellBits(data, i, e.cellBits)
-		colorID := bits >> ShapeBits
-		shapeID := bits & 0x0f
-		tile := e.tileCacheBGRA[int(colorID)*symbol.NumSymbols+int(shapeID)]
+		colorID := bits >> e.shapeBits
+		shapeID := bits & e.shapeMask
+		tile := e.tileCacheBGRA[int(colorID)*e.symbolRecognizer.SymbolCount()+int(shapeID)]
 		cellX := i % e.gridSize
 		cellY := i / e.gridSize
 		copyTileRGBA(dst, stride, cellX*e.cellSize*4, cellY*e.cellSize, e.cellSize, tile)
@@ -220,13 +228,14 @@ func (e *Encoder) renderDataBGRA(data []byte, numCells int, dst []byte) []byte {
 
 func (e *Encoder) buildTileCache() {
 	colorCount := 1 << e.colorBits
-	e.tileCache = make([][]byte, colorCount*symbol.NumSymbols)
-	e.tileCacheBGRA = make([][]byte, colorCount*symbol.NumSymbols)
+	symbolCount := e.symbolRecognizer.SymbolCount()
+	e.tileCache = make([][]byte, colorCount*symbolCount)
+	e.tileCacheBGRA = make([][]byte, colorCount*symbolCount)
 	for colorID := 0; colorID < colorCount; colorID++ {
 		cellColor := e.colorRecognizer.GetColor(colorpkg.ColorID(colorID))
-		for shapeID := 0; shapeID < symbol.NumSymbols; shapeID++ {
+		for shapeID := 0; shapeID < symbolCount; shapeID++ {
 			tile := e.buildTile(color.RGBA(cellColor), symbol.SymbolID(shapeID))
-			index := colorID*symbol.NumSymbols + shapeID
+			index := colorID*symbolCount + shapeID
 			e.tileCache[index] = tile
 			e.tileCacheBGRA[index] = rgbaTileToBGRA(tile)
 		}
@@ -238,8 +247,8 @@ func (e *Encoder) buildTile(cellColor color.RGBA, shapeID symbol.SymbolID) []byt
 	template, err := e.symbolRecognizer.GetTemplate(shapeID)
 	for dy := 0; dy < e.cellSize; dy++ {
 		for dx := 0; dx < e.cellSize; dx++ {
-			srcX := dx * 8 / e.cellSize
-			srcY := dy * 8 / e.cellSize
+			srcX := dx * e.tileWidth / e.cellSize
+			srcY := dy * e.tileHeight / e.cellSize
 			foreground := true
 			if err == nil {
 				foreground = e.templateForeground(shapeID, template, srcX, srcY)
@@ -321,9 +330,8 @@ func (e *Encoder) drawCell(img *image.RGBA, x, y int, cell Cell) {
 	// 缩放并绘制符号
 	for dy := 0; dy < e.cellSize; dy++ {
 		for dx := 0; dx < e.cellSize; dx++ {
-			// 从 8x8 模板映射到 cellSize x cellSize
-			srcX := dx * 8 / e.cellSize
-			srcY := dy * 8 / e.cellSize
+			srcX := dx * e.tileWidth / e.cellSize
+			srcY := dy * e.tileHeight / e.cellSize
 
 			// 如果模板 hash 位是前景，使用指定颜色；否则使用黑色背景。
 			var finalColor color.RGBA
@@ -345,11 +353,15 @@ type Decoder struct {
 	cellSize         int
 	gridSize         int
 	colorBits        int
+	shapeBits        int
 	cellBits         int
 	colorMask        uint16
-	templateMasks    [symbol.NumSymbols][64]bool
-	templatesReady   [symbol.NumSymbols]bool
-	foregroundPixels [symbol.NumSymbols][]image.Point
+	shapeMask        uint16
+	tileWidth        int
+	tileHeight       int
+	templateMasks    [][]bool
+	templatesReady   []bool
+	foregroundPixels [][]image.Point
 }
 
 // NewDecoder 创建解码器
@@ -371,8 +383,12 @@ func NewDecoderWithColorBits(symbolRecognizer *symbol.Recognizer, colorRecognize
 		cellSize:         cellSize,
 		gridSize:         gridSize,
 		colorBits:        colorBits,
-		cellBits:         ShapeBits + colorBits,
+		shapeBits:        symbolRecognizer.Spec().ShapeBits,
+		cellBits:         symbolRecognizer.Spec().ShapeBits + colorBits,
 		colorMask:        uint16((1 << colorBits) - 1),
+		shapeMask:        uint16((1 << symbolRecognizer.Spec().ShapeBits) - 1),
+		tileWidth:        symbolRecognizer.Spec().Width,
+		tileHeight:       symbolRecognizer.Spec().Height,
 	}
 	d.templateMasks, d.templatesReady = buildTemplateMasks(symbolRecognizer)
 	d.buildForegroundPixels()
@@ -416,7 +432,7 @@ func (d *Decoder) DecodeInto(img image.Image, dst []byte) ([]byte, error) {
 		hash := d.cellHash(img, x, y)
 		shapeID, _ := d.symbolRecognizer.RecognizeHash(hash)
 		colorID := d.recognizeCellColorAt(img, x, y, shapeID)
-		writeCellBits(dst, i, d.cellBits, (uint16(colorID)&d.colorMask)<<ShapeBits|uint16(shapeID))
+		writeCellBits(dst, i, d.cellBits, (uint16(colorID)&d.colorMask)<<d.shapeBits|uint16(shapeID))
 	}
 
 	return dst, nil
@@ -457,7 +473,7 @@ func (d *Decoder) decodeRGBAInto(img *image.RGBA, bounds image.Rectangle, numCel
 		hash := d.cellHashRGBA(img, x, y)
 		shapeID, _ := d.symbolRecognizer.RecognizeHash(hash)
 		colorID := d.recognizeCellColorRGBA(img, x, y, shapeID)
-		writeCellBits(dst, i, d.cellBits, (uint16(colorID)&d.colorMask)<<ShapeBits|uint16(shapeID))
+		writeCellBits(dst, i, d.cellBits, (uint16(colorID)&d.colorMask)<<d.shapeBits|uint16(shapeID))
 	}
 }
 
@@ -469,7 +485,7 @@ func (d *Decoder) decodeBGRAInto(pix []byte, stride int, numCells int, dst []byt
 		hash := d.cellHashBGRA(pix, stride, x, y)
 		shapeID, _ := d.symbolRecognizer.RecognizeHash(hash)
 		colorID := d.recognizeCellColorBGRA(pix, stride, x, y, shapeID)
-		writeCellBits(dst, i, d.cellBits, (uint16(colorID)&d.colorMask)<<ShapeBits|uint16(shapeID))
+		writeCellBits(dst, i, d.cellBits, (uint16(colorID)&d.colorMask)<<d.shapeBits|uint16(shapeID))
 	}
 }
 
@@ -487,29 +503,29 @@ func writeCellBits(dst []byte, cellIndex int, cellBits int, bits uint16) {
 }
 
 func (d *Decoder) cellHashBGRA(pix []byte, stride int, x int, y int) uint64 {
-	var samples [64]uint8
+	samples := make([]uint8, d.tileWidth*d.tileHeight)
 	var sum uint64
 
-	for ty := 0; ty < 8; ty++ {
-		for tx := 0; tx < 8; tx++ {
-			sx := x + tx*d.cellSize/8
-			sy := y + ty*d.cellSize/8
+	for ty := 0; ty < d.tileHeight; ty++ {
+		for tx := 0; tx < d.tileWidth; tx++ {
+			sx := x + tx*d.cellSize/d.tileWidth
+			sy := y + ty*d.cellSize/d.tileHeight
 			offset := sy*stride + sx*4
 			b := pix[offset]
 			g := pix[offset+1]
 			r := pix[offset+2]
 			intensity := maxRGB(r, g, b)
-			samples[ty*8+tx] = intensity
+			samples[ty*d.tileWidth+tx] = intensity
 			sum += uint64(intensity)
 		}
 	}
 
-	threshold := uint8(sum / 64)
+	threshold := uint8(sum / uint64(len(samples)))
 	return hashSamples(samples, threshold)
 }
 
 func (d *Decoder) recognizeCellColorBGRA(pix []byte, stride int, x int, y int, shapeID symbol.SymbolID) colorpkg.ColorID {
-	if shapeID >= symbol.NumSymbols || len(d.foregroundPixels[shapeID]) == 0 {
+	if int(shapeID) >= len(d.foregroundPixels) || len(d.foregroundPixels[shapeID]) == 0 {
 		return colorpkg.ColorID(0)
 	}
 
@@ -595,16 +611,17 @@ func (d *Decoder) extractCellsRGBA(img *image.RGBA, bounds image.Rectangle, numC
 }
 
 func (d *Decoder) buildForegroundPixels() {
-	for shapeID := symbol.SymbolID(0); shapeID < symbol.NumSymbols; shapeID++ {
+	d.foregroundPixels = make([][]image.Point, d.symbolRecognizer.SymbolCount())
+	for shapeID := 0; shapeID < d.symbolRecognizer.SymbolCount(); shapeID++ {
 		if !d.templatesReady[shapeID] {
 			continue
 		}
 		pixels := make([]image.Point, 0, d.cellSize*d.cellSize/2)
 		for dy := 0; dy < d.cellSize; dy++ {
 			for dx := 0; dx < d.cellSize; dx++ {
-				tx := dx * 8 / d.cellSize
-				ty := dy * 8 / d.cellSize
-				if d.templateMasks[shapeID][ty*8+tx] {
+				tx := dx * d.tileWidth / d.cellSize
+				ty := dy * d.tileHeight / d.cellSize
+				if d.templateMasks[shapeID][ty*d.tileWidth+tx] {
 					pixels = append(pixels, image.Point{X: dx, Y: dy})
 				}
 			}
@@ -614,29 +631,29 @@ func (d *Decoder) buildForegroundPixels() {
 }
 
 func (d *Decoder) cellHashRGBA(img *image.RGBA, x, y int) uint64 {
-	var samples [64]uint8
+	samples := make([]uint8, d.tileWidth*d.tileHeight)
 	var sum uint64
 
-	for ty := 0; ty < 8; ty++ {
-		for tx := 0; tx < 8; tx++ {
-			sx := x + tx*d.cellSize/8
-			sy := y + ty*d.cellSize/8
+	for ty := 0; ty < d.tileHeight; ty++ {
+		for tx := 0; tx < d.tileWidth; tx++ {
+			sx := x + tx*d.cellSize/d.tileWidth
+			sy := y + ty*d.cellSize/d.tileHeight
 			pix := img.PixOffset(sx, sy)
 			r := img.Pix[pix]
 			g := img.Pix[pix+1]
 			b := img.Pix[pix+2]
 			intensity := maxRGB(r, g, b)
-			samples[ty*8+tx] = intensity
+			samples[ty*d.tileWidth+tx] = intensity
 			sum += uint64(intensity)
 		}
 	}
 
-	threshold := uint8(sum / 64)
+	threshold := uint8(sum / uint64(len(samples)))
 	return hashSamples(samples, threshold)
 }
 
 func (d *Decoder) recognizeCellColorRGBA(img *image.RGBA, x, y int, shapeID symbol.SymbolID) colorpkg.ColorID {
-	if shapeID >= symbol.NumSymbols || len(d.foregroundPixels[shapeID]) == 0 {
+	if int(shapeID) >= len(d.foregroundPixels) || len(d.foregroundPixels[shapeID]) == 0 {
 		return d.recognizeCellColorAt(img, x, y, shapeID)
 	}
 
@@ -659,25 +676,25 @@ func (d *Decoder) recognizeCellColorRGBA(img *image.RGBA, x, y int, shapeID symb
 }
 
 func (d *Decoder) cellHash(img image.Image, x, y int) uint64 {
-	var samples [64]uint8
+	samples := make([]uint8, d.tileWidth*d.tileHeight)
 	var sum uint64
 
-	for ty := 0; ty < 8; ty++ {
-		for tx := 0; tx < 8; tx++ {
-			sx := x + tx*d.cellSize/8
-			sy := y + ty*d.cellSize/8
+	for ty := 0; ty < d.tileHeight; ty++ {
+		for tx := 0; tx < d.tileWidth; tx++ {
+			sx := x + tx*d.cellSize/d.tileWidth
+			sy := y + ty*d.cellSize/d.tileHeight
 			r, g, b := fastRGBAt(img, sx, sy)
 			intensity := maxRGB(r, g, b)
-			samples[ty*8+tx] = intensity
+			samples[ty*d.tileWidth+tx] = intensity
 			sum += uint64(intensity)
 		}
 	}
 
-	threshold := uint8(sum / 64)
+	threshold := uint8(sum / uint64(len(samples)))
 	return hashSamples(samples, threshold)
 }
 
-func hashSamples(samples [64]uint8, threshold uint8) uint64 {
+func hashSamples(samples []uint8, threshold uint8) uint64 {
 	var hash uint64
 	for _, intensity := range samples {
 		bit := uint64(0)
@@ -712,8 +729,8 @@ func (d *Decoder) recognizeCellColor(cellImg image.Image, shapeID symbol.SymbolI
 
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			tx := (x - bounds.Min.X) * 8 / bounds.Dx()
-			ty := (y - bounds.Min.Y) * 8 / bounds.Dy()
+			tx := (x - bounds.Min.X) * d.tileWidth / bounds.Dx()
+			ty := (y - bounds.Min.Y) * d.tileHeight / bounds.Dy()
 			if !d.templateForeground(shapeID, template, tx, ty) {
 				continue
 			}
@@ -753,8 +770,8 @@ func (d *Decoder) recognizeCellColorAt(img image.Image, x, y int, shapeID symbol
 
 	for dy := 0; dy < d.cellSize; dy++ {
 		for dx := 0; dx < d.cellSize; dx++ {
-			tx := dx * 8 / d.cellSize
-			ty := dy * 8 / d.cellSize
+			tx := dx * d.tileWidth / d.cellSize
+			ty := dy * d.tileHeight / d.cellSize
 			if !d.templateForeground(shapeID, template, tx, ty) {
 				continue
 			}
@@ -783,32 +800,34 @@ func (d *Decoder) recognizeCellColorAt(img image.Image, x, y int, shapeID symbol
 }
 
 func (e *Encoder) templateForeground(shapeID symbol.SymbolID, template *image.Gray, x, y int) bool {
-	if shapeID < symbol.NumSymbols && e.templatesReady[shapeID] {
-		return e.templateMasks[shapeID][y*8+x]
+	if int(shapeID) < len(e.templatesReady) && e.templatesReady[shapeID] {
+		return e.templateMasks[shapeID][y*e.tileWidth+x]
 	}
 	return templateForeground(template, x, y)
 }
 
 func (d *Decoder) templateForeground(shapeID symbol.SymbolID, template *image.Gray, x, y int) bool {
-	if shapeID < symbol.NumSymbols && d.templatesReady[shapeID] {
-		return d.templateMasks[shapeID][y*8+x]
+	if int(shapeID) < len(d.templatesReady) && d.templatesReady[shapeID] {
+		return d.templateMasks[shapeID][y*d.tileWidth+x]
 	}
 	return templateForeground(template, x, y)
 }
 
-func buildTemplateMasks(rec *symbol.Recognizer) ([symbol.NumSymbols][64]bool, [symbol.NumSymbols]bool) {
-	var masks [symbol.NumSymbols][64]bool
-	var ready [symbol.NumSymbols]bool
+func buildTemplateMasks(rec *symbol.Recognizer) ([][]bool, []bool) {
+	spec := rec.Spec()
+	masks := make([][]bool, rec.SymbolCount())
+	ready := make([]bool, rec.SymbolCount())
 
-	for id := symbol.SymbolID(0); id < symbol.NumSymbols; id++ {
-		template, err := rec.GetTemplate(id)
+	for id := 0; id < rec.SymbolCount(); id++ {
+		template, err := rec.GetTemplate(symbol.SymbolID(id))
 		if err != nil {
 			continue
 		}
+		masks[id] = make([]bool, spec.TileBits())
 		avg := templateAverageGray(template)
-		for y := 0; y < 8; y++ {
-			for x := 0; x < 8; x++ {
-				masks[id][y*8+x] = template.GrayAt(x, y).Y > avg
+		for y := 0; y < spec.Height; y++ {
+			for x := 0; x < spec.Width; x++ {
+				masks[id][y*spec.Width+x] = template.GrayAt(x, y).Y > avg
 			}
 		}
 		ready[id] = true
@@ -874,7 +893,7 @@ func (d *Decoder) cellsToBytes(cells []Cell) []byte {
 
 	bitIndex := 0
 	for _, cell := range cells {
-		bits := (uint16(cell.Color)&d.colorMask)<<ShapeBits | uint16(cell.Shape)
+		bits := (uint16(cell.Color)&d.colorMask)<<d.shapeBits | uint16(cell.Shape)
 
 		for j := 0; j < d.cellBits && bitIndex < len(data)*8; j++ {
 			bit := (bits >> (d.cellBits - 1 - j)) & 1

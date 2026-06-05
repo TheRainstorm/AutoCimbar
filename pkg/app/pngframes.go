@@ -11,6 +11,7 @@ import (
 
 	"github.com/autocambar/autocambar/pkg/codec"
 	"github.com/autocambar/autocambar/pkg/fountain"
+	"github.com/autocambar/autocambar/pkg/symbol"
 )
 
 type EncodeResult struct {
@@ -32,6 +33,9 @@ type EncodeResult struct {
 	MD5             string
 	Compression     uint32
 	ColorBits       int
+	ShapeBits       int
+	TileWidth       int
+	TileHeight      int
 	PacketsPerFrame int
 }
 
@@ -40,7 +44,14 @@ func EncodeFileToPNGFrames(inputPath string, outputDir string, gridSize int, sca
 }
 
 func EncodeFileToPNGFramesWithOptions(inputPath string, outputDir string, gridSize int, scale int, symbolDir string, redundancyPercent int, blockSize int, eccPercent int, compress bool, colorBits int) (*EncodeResult, error) {
+	return EncodeFileToPNGFramesWithSpec(inputPath, outputDir, gridSize, scale, symbolDir, redundancyPercent, blockSize, eccPercent, compress, colorBits, symbol.DefaultSpec())
+}
+
+func EncodeFileToPNGFramesWithSpec(inputPath string, outputDir string, gridSize int, scale int, symbolDir string, redundancyPercent int, blockSize int, eccPercent int, compress bool, colorBits int, spec symbol.Spec) (*EncodeResult, error) {
 	colorBits = normalizeColorBits(colorBits)
+	if err := spec.Validate(); err != nil {
+		return nil, err
+	}
 	if gridSize <= 0 {
 		return nil, fmt.Errorf("Q must be > 0")
 	}
@@ -51,7 +62,7 @@ func EncodeFileToPNGFramesWithOptions(inputPath string, outputDir string, gridSi
 		return nil, fmt.Errorf("redundancy must be >= 0")
 	}
 
-	payloadCapacity, err := PayloadCapacityBytesWithECCAndColorBits(gridSize, eccPercent, colorBits)
+	payloadCapacity, err := PayloadCapacityBytesWithECCAndSpecAndPackets(gridSize, eccPercent, spec, colorBits, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +75,7 @@ func EncodeFileToPNGFramesWithOptions(inputPath string, outputDir string, gridSi
 	if blockSize > payloadCapacity {
 		return nil, fmt.Errorf("block size %d exceeds frame payload capacity %d", blockSize, payloadCapacity)
 	}
-	packetCodec, err := NewFramePacketCodecWithColorBits(gridSize, eccPercent, blockSize, colorBits)
+	packetCodec, err := NewFramePacketCodecWithSpecAndPackets(gridSize, eccPercent, blockSize, spec, colorBits, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +89,7 @@ func EncodeFileToPNGFramesWithOptions(inputPath string, outputDir string, gridSi
 		return nil, err
 	}
 
-	symRec, err := LoadLibcimbarSymbols(symbolDir)
+	symRec, err := LoadSymbols(symbolDir, spec)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +97,7 @@ func EncodeFileToPNGFramesWithOptions(inputPath string, outputDir string, gridSi
 	if err != nil {
 		return nil, err
 	}
-	enc, err := codec.NewEncoderWithColorBits(symRec, colorRec, CellSize(scale), gridSize, colorBits)
+	enc, err := codec.NewEncoderWithColorBits(symRec, colorRec, CellSizeForSpec(scale, spec), gridSize, colorBits)
 	if err != nil {
 		return nil, err
 	}
@@ -135,14 +146,14 @@ func EncodeFileToPNGFramesWithOptions(inputPath string, outputDir string, gridSi
 		paths = append(paths, path)
 	}
 
-	imageSize := gridSize * CellSize(scale)
+	imageSize := gridSize * CellSizeForSpec(scale, spec)
 	return &EncodeResult{
 		FramePaths:      paths,
 		GridSize:        gridSize,
 		Scale:           scale,
-		CellSize:        CellSize(scale),
+		CellSize:        CellSizeForSpec(scale, spec),
 		ImageSize:       imageSize,
-		FrameCapacity:   GridCapacityBytesWithColorBits(gridSize, colorBits),
+		FrameCapacity:   GridCapacityBytesWithSpec(gridSize, spec, colorBits),
 		PayloadCapacity: payloadCapacity,
 		ECCPercent:      eccPercent,
 		ECCBytes:        packetCodec.ParitySize(),
@@ -155,6 +166,9 @@ func EncodeFileToPNGFramesWithOptions(inputPath string, outputDir string, gridSi
 		MD5:             md5Hex,
 		Compression:     sourceCompression(compress),
 		ColorBits:       colorBits,
+		ShapeBits:       spec.ShapeBits,
+		TileWidth:       spec.Width,
+		TileHeight:      spec.Height,
 		PacketsPerFrame: 1,
 	}, nil
 }
@@ -164,7 +178,14 @@ func DecodePNGFramesToFile(inputPath string, outputPath string, gridSize int, sc
 }
 
 func DecodePNGFramesToFileWithColorBits(inputPath string, outputPath string, gridSize int, scale int, symbolDir string, blockSize int, eccPercent int, colorBits int) error {
+	return DecodePNGFramesToFileWithSpec(inputPath, outputPath, gridSize, scale, symbolDir, blockSize, eccPercent, colorBits, symbol.DefaultSpec())
+}
+
+func DecodePNGFramesToFileWithSpec(inputPath string, outputPath string, gridSize int, scale int, symbolDir string, blockSize int, eccPercent int, colorBits int, spec symbol.Spec) error {
 	colorBits = normalizeColorBits(colorBits)
+	if err := spec.Validate(); err != nil {
+		return err
+	}
 	if gridSize <= 0 {
 		return fmt.Errorf("Q must be > 0")
 	}
@@ -179,7 +200,7 @@ func DecodePNGFramesToFileWithColorBits(inputPath string, outputPath string, gri
 	if len(paths) == 0 {
 		return fmt.Errorf("no PNG frames found in %s", inputPath)
 	}
-	payloadCapacity, err := PayloadCapacityBytesWithECCAndColorBits(gridSize, eccPercent, colorBits)
+	payloadCapacity, err := PayloadCapacityBytesWithECCAndSpecAndPackets(gridSize, eccPercent, spec, colorBits, 1)
 	if err != nil {
 		return err
 	}
@@ -192,11 +213,11 @@ func DecodePNGFramesToFileWithColorBits(inputPath string, outputPath string, gri
 	if blockSize > payloadCapacity {
 		return fmt.Errorf("block size %d exceeds frame payload capacity %d", blockSize, payloadCapacity)
 	}
-	packetCodec, err := NewFramePacketCodecWithColorBits(gridSize, eccPercent, blockSize, colorBits)
+	packetCodec, err := NewFramePacketCodecWithSpecAndPackets(gridSize, eccPercent, blockSize, spec, colorBits, 1)
 	if err != nil {
 		return err
 	}
-	symRec, err := LoadLibcimbarSymbols(symbolDir)
+	symRec, err := LoadSymbols(symbolDir, spec)
 	if err != nil {
 		return err
 	}
@@ -204,7 +225,7 @@ func DecodePNGFramesToFileWithColorBits(inputPath string, outputPath string, gri
 	if err != nil {
 		return err
 	}
-	codecDec, err := codec.NewDecoderWithColorBits(symRec, colorRec, CellSize(scale), gridSize, colorBits)
+	codecDec, err := codec.NewDecoderWithColorBits(symRec, colorRec, CellSizeForSpec(scale, spec), gridSize, colorBits)
 	if err != nil {
 		return err
 	}
