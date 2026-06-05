@@ -4,8 +4,8 @@ AutoCamBar 是一个面向远程桌面截屏场景的文件传输工具。发送
 
 当前实现使用 Go：
 
-- 默认 4 色 × 16 个 8x8 形状符号，每个 cell 编码 6 bits；可用 `-color-bits 0..8` 和 `-shape-bits` 调整颜色/形状通道
-- 默认内置 16 个 libcimbar bitmap 符号，Windows 上单个 exe 可直接运行；更高 shape bits 或其它 tile 尺寸使用 `generated-tiles/` 或 `cmd/tilegen` 生成的符号目录
+- 默认 4 色 × 16 个 8x8 形状符号，每个 cell 编码 6 bits；可用 `-cell`、`-color-bits` 和 `-shape-bits` 调整 cell 规格
+- 常用 `generated-tiles/` 符号集已编译进程序，Windows 上单个 exe 可直接运行；仍可用 `-symbols` 覆盖为外部符号目录
 - 原始文件传输前默认使用 zstd 压缩，恢复时流式解压并校验 MD5；可用 `-no-zstd` 关闭
 - 纯 Go 线性喷泉码，支持冗余帧和丢帧恢复
 - PNG 帧模式：便于测试和离线验证
@@ -57,7 +57,7 @@ GOOS=windows GOARCH=amd64 go build -o bin/tilegen.exe ./cmd/tilegen
 
 ## Tile 符号规格
 
-默认 `-tile 8x8 -shape-bits 4` 使用内置 libcimbar 16 符号，不需要 `-symbols`。
+默认 `-tile 8x8 -shape-bits 4` 使用内置 libcimbar 16 符号，不需要 `-symbols`。下列 `generated-tiles/` 规格也已编译进程序，运行时只需要指定 `-tile/-shape-bits` 或 `-cell`，不需要分发符号目录。
 
 仓库提供了几组已生成符号，可直接用于实验：
 
@@ -73,8 +73,8 @@ generated-tiles/4x4_4bit   16 symbols, min hamming distance 4
 使用示例：
 
 ```bash
-./bin/encoder -i input.bin -o frames -tile 8x8 -shape-bits 5 -symbols generated-tiles/8x8_5bit
-./bin/decoder -i frames -o output.bin -tile 8x8 -shape-bits 5 -symbols generated-tiles/8x8_5bit
+./bin/encoder -png -i input.bin -o frames -tile 8x8 -shape-bits 5
+./bin/decoder -png -i frames -o output.bin -tile 8x8 -shape-bits 5
 ```
 
 生成新的符号集合：
@@ -83,7 +83,15 @@ generated-tiles/4x4_4bit   16 symbols, min hamming distance 4
 ./bin/tilegen -tile 8x8 -shape-bits 6 -o generated-tiles/8x8_6bit_custom -seed 123 -attempts 20000
 ```
 
-输出目录包含 `00.png..` 和 `manifest.json`。encoder 和 decoder 必须使用相同的 `-tile`、`-shape-bits` 和 `-symbols`，这些参数不写入每帧数据。
+输出目录包含 `00.png..` 和 `manifest.json`。encoder 和 decoder 必须使用相同的 `-tile`、`-shape-bits` 和 `-symbols`，这些参数不写入每帧数据。`-symbols` 非空时优先使用外部目录。
+
+`-cell` 是常用 cell 参数的紧凑写法，格式为 `数字+字母` 的组合：
+
+- `t`：tile 宽高，例如 `4t` 表示 `-tile 4x4`
+- `c`：color bits，例如 `7c` 表示 `-color-bits 7`
+- `s`：shape bits，例如 `4s` 表示 `-shape-bits 4`
+
+示例：`-cell 4t7c4s` 等价于 `-tile 4x4 -color-bits 7 -shape-bits 4`。
 
 如果希望不同 tile size 下显示面积大致一致，可以用 `-RQ` 代替手工换算 `-Q`。`-RQ` 表示以 `8x8` tile 为基准的参考 Q，程序会按 `actual_Q = ceil(RQ * 8 / tile_width)` 自动计算实际 Q。例如 `-RQ 120 -tile 4x4` 会使用实际 `Q=240`，显示宽度仍约等于 `120 * 8 * B` 像素。
 
@@ -145,12 +153,12 @@ decoder 也会在喷泉码恢复完成后校验内置的文件级 MD5；校验�
 ```
 
 ```powershell
-.\bin\encoder.exe -screen -i input.bin -R 0:-0:-0
+.\bin\encoder.exe -i input.bin
 ```
 
 参数说明：
 
-- `-screen`：使用屏幕播放模式，不写 PNG 文件
+- 默认使用屏幕播放模式，不写 PNG 文件；需要 PNG 模式时使用 `-png`
 - `-R X:Y` 或 `-R SCREEN:X:Y`：播放窗口位置；省略 `SCREEN` 时默认主屏 0
 - 负数从该屏幕右/下边缘定位；`0:-0:-0` 表示主屏右下角贴边
 - `-fps`：窗口刷新帧率
@@ -168,12 +176,12 @@ decoder 也会在喷泉码恢复完成后校验内置的文件级 MD5；校验�
 接收端从指定屏幕区域截图并解码：
 
 ```powershell
-.\bin\decoder.exe -screen -o output.bin -R 0:-0:-0 -timeout 5m
+.\bin\decoder.exe -o output.bin -timeout 5m
 ```
 
 参数说明：
 
-- `-screen`：使用截图解码模式
+- 默认使用截图解码模式；需要 PNG 模式时使用 `-png`
 - `-R SCREEN:X:Y`：截图区域
 - `SCREEN`：屏幕编号，从 0 开始
 - `X:Y`：截图区域左上角；负数从该屏幕右/下边缘定位
@@ -217,15 +225,21 @@ decoder 进度中的 `cap`、`dec`、`pkt v/r/u`、`bad`、`spd`、`ema` 含义�
 -color-bits    颜色通道位数，0..8 表示 1..256 色；默认 2
 -shape-bits    形状通道位数，默认 4；必须与 decoder 一致
 -tile          逻辑符号 tile 尺寸，默认 8x8；必须与 decoder 一致
+-cell          紧凑 cell 规格，如 4t7c4s
+-c             -cell 的短参数
 -packets       屏幕模式每张图携带的独立 packet 数，默认 1；必须与 decoder 一致
+-p             -packets 的短参数
 -no-zstd       关闭默认 zstd 压缩
--screen        启用屏幕播放模式
+-png           启用 PNG 帧模式；默认是屏幕播放模式
 -R             屏幕播放位置，格式 X:Y 或 SCREEN:X:Y
--fps           屏幕播放帧率，默认 60
+-r             -R 的短参数
+-fps           屏幕播放帧率，默认 120
+-f             -fps 的短参数
 -addr          非 Windows HTTP fallback 的播放器地址
 -open          非 Windows HTTP fallback 是否自动打开浏览器
 -list-displays 列出程序识别到的屏幕索引和坐标
--symbols       可选符号目录；为空时使用内置 8x8/4bit 符号
+-symbols       可选符号目录；为空时使用内置符号
+-s             -symbols 的短参数
 -list-displays 列出程序识别到的屏幕索引和坐标
 ```
 
@@ -241,12 +255,18 @@ decoder 进度中的 `cap`、`dec`、`pkt v/r/u`、`bad`、`spd`、`ema` 含义�
 -color-bits    颜色通道位数，0..8 表示 1..256 色；默认 2
 -shape-bits    形状通道位数，默认 4；必须与 encoder 一致
 -tile          逻辑符号 tile 尺寸，默认 8x8；必须与 encoder 一致
+-cell          紧凑 cell 规格，如 4t7c4s
+-c             -cell 的短参数
 -packets       屏幕模式每张图携带的独立 packet 数，默认 1；必须与 encoder 一致
--screen        启用截图解码模式
+-p             -packets 的短参数
+-png           启用 PNG 帧模式；默认是截图解码模式
 -R             截图区域，格式 SCREEN:X:Y
--fps           截图频率，默认 60
+-r             -R 的短参数
+-fps           截图频率，默认 120
+-f             -fps 的短参数
 -timeout       截图解码超时
--symbols       可选符号目录；为空时使用内置 8x8/4bit 符号
+-symbols       可选符号目录；为空时使用内置符号
+-s             -symbols 的短参数
 ```
 
 ## 自动测试

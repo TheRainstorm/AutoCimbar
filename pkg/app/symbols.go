@@ -1,10 +1,12 @@
 package app
 
 import (
+	"embed"
 	"fmt"
 	"image"
 	"image/color"
 	"image/png"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -44,6 +46,9 @@ var builtinLibcimbarSymbolHashes = [symbol.NumSymbols]uint64{
 	0xe1e1c7c7e3e38787,
 }
 
+//go:embed generated-tiles/*/*.png
+var embeddedGeneratedTiles embed.FS
+
 func LoadLibcimbarSymbols(dir string) (*symbol.Recognizer, error) {
 	return LoadSymbols(dir, symbol.DefaultSpec())
 }
@@ -56,10 +61,17 @@ func LoadSymbols(dir string, spec symbol.Spec) (*symbol.Recognizer, error) {
 		if spec == symbol.DefaultSpec() {
 			return LoadBuiltinLibcimbarSymbols()
 		}
-		return nil, fmt.Errorf("built-in symbols only support tile %dx%d shape-bits=%d; provide -symbols for tile %dx%d shape-bits=%d",
-			symbol.DefaultTileWidth, symbol.DefaultTileHeight, symbol.DefaultShapeBits, spec.Width, spec.Height, spec.ShapeBits)
+		rec, err := loadSymbolsFromFS(embeddedGeneratedTiles, embeddedTileDir(spec), spec)
+		if err == nil {
+			return rec, nil
+		}
+		return nil, fmt.Errorf("no built-in symbols for tile %dx%d shape-bits=%d; provide -symbols or generate with tilegen: %w", spec.Width, spec.Height, spec.ShapeBits, err)
 	}
 
+	return loadSymbolsFromOSDir(dir, spec)
+}
+
+func loadSymbolsFromOSDir(dir string, spec symbol.Spec) (*symbol.Recognizer, error) {
 	rec := symbol.NewRecognizerWithSpec(spec)
 
 	for id := 0; id < spec.SymbolCount(); id++ {
@@ -89,6 +101,37 @@ func LoadSymbols(dir string, spec symbol.Spec) (*symbol.Recognizer, error) {
 	}
 
 	return rec, nil
+}
+
+func loadSymbolsFromFS(fsys fs.FS, dir string, spec symbol.Spec) (*symbol.Recognizer, error) {
+	rec := symbol.NewRecognizerWithSpec(spec)
+	for id := 0; id < spec.SymbolCount(); id++ {
+		name := fmt.Sprintf("%02x.png", id)
+		path := filepath.ToSlash(filepath.Join(dir, name))
+		f, err := fsys.Open(path)
+		if err != nil {
+			return nil, fmt.Errorf("open embedded symbol %s: %w", path, err)
+		}
+		img, err := png.Decode(f)
+		closeErr := f.Close()
+		if err != nil {
+			return nil, fmt.Errorf("decode embedded symbol %s: %w", path, err)
+		}
+		if closeErr != nil {
+			return nil, fmt.Errorf("close embedded symbol %s: %w", path, closeErr)
+		}
+		if err := rec.LoadSymbol(symbol.SymbolID(id), img); err != nil {
+			return nil, fmt.Errorf("load embedded symbol %s: %w", path, err)
+		}
+	}
+	if !rec.IsLoaded() {
+		return nil, fmt.Errorf("not all embedded symbols were loaded from %s", dir)
+	}
+	return rec, nil
+}
+
+func embeddedTileDir(spec symbol.Spec) string {
+	return fmt.Sprintf("generated-tiles/%dx%d_%dbit", spec.Width, spec.Height, spec.ShapeBits)
 }
 
 func LoadBuiltinLibcimbarSymbols() (*symbol.Recognizer, error) {

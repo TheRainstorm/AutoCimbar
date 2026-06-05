@@ -1,0 +1,7 @@
+tile=6x6
+shape_bits=4
+symbols=16
+seed=664
+attempts=8000
+min_distance=12
+avg_distance=17.67

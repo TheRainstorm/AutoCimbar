@@ -1,0 +1,7 @@
+tile=4x4
+shape_bits=3
+symbols=8
+seed=443
+attempts=4000
+min_distance=6
+avg_distance=8.21

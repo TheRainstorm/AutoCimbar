@@ -81,3 +81,24 @@ func TestLoadGeneratedSymbolsWithSpec(t *testing.T) {
 		t.Fatalf("last symbol missing: %v", err)
 	}
 }
+
+func TestLoadEmbeddedGeneratedSymbols(t *testing.T) {
+	spec, err := symbol.NewSpec(4, 4, 4)
+	if err != nil {
+		t.Fatalf("NewSpec: %v", err)
+	}
+	rec, err := LoadSymbols(DefaultSymbolDir, spec)
+	if err != nil {
+		t.Fatalf("LoadSymbols embedded: %v", err)
+	}
+	if !rec.IsLoaded() {
+		t.Fatal("embedded generated recognizer is not fully loaded")
+	}
+	if rec.SymbolCount() != 16 {
+		t.Fatalf("SymbolCount = %d, want 16", rec.SymbolCount())
+	}
+	minDist, _ := rec.VerifyHammingDistances()
+	if minDist != 4 {
+		t.Fatalf("min hamming distance = %d, want 4", minDist)
+	}
+}

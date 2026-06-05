@@ -21,16 +21,47 @@ func main() {
 	colorBits := flag.Int("color-bits", 2, "color bits per cell: 0..8 uses 1..256 colors; decoder must use the same value")
 	shapeBits := flag.Int("shape-bits", 4, "shape bits per cell: 4 uses 16 symbols, 5 uses 32, 6 uses 64; decoder must use the same value")
 	tile := flag.String("tile", "8x8", "logical shape tile size WIDTHxHEIGHT; decoder must use the same value")
+	cell := flag.String("cell", "", "compact cell spec like 4t7c4s: tile width, color bits, shape bits")
+	cellShort := flag.String("c", "", "short alias for -cell")
 	packetsPerFrame := flag.Int("packets", 1, "independent packets per screen frame; decoder must use the same value")
+	packetsShort := flag.Int("p", 0, "short alias for -packets")
 	noZstd := flag.Bool("no-zstd", false, "disable default zstd source compression")
-	screen := flag.Bool("screen", false, "show frames in a borderless screen window instead of writing PNG files")
-	region := flag.String("R", "0:0", "screen window region X:Y or SCREEN:X:Y, negative values anchor from right/bottom")
-	fps := flag.Int("fps", 60, "screen frame rate")
+	screen := flag.Bool("screen", true, "show frames in a borderless screen window instead of writing PNG files")
+	pngMode := flag.Bool("png", false, "write PNG frames instead of screen mode")
+	region := flag.String("R", "0:-0:-0", "screen window region X:Y or SCREEN:X:Y, negative values anchor from right/bottom")
+	regionShort := flag.String("r", "", "short alias for -R")
+	fps := flag.Int("fps", 120, "screen frame rate")
+	fpsShort := flag.Int("f", 0, "short alias for -fps")
 	addr := flag.String("addr", "127.0.0.1:8080", "screen encoder HTTP listen address")
 	open := flag.Bool("open", true, "open the screen encoder page in the default browser")
 	listDisplays := flag.Bool("list-displays", false, "list detected display indexes and bounds")
-	symbolDir := flag.String("symbols", app.DefaultSymbolDir, "optional directory containing symbol PNG files named 00.png..; empty uses built-in 8x8/4bit symbols")
+	symbolDir := flag.String("symbols", app.DefaultSymbolDir, "optional directory containing symbol PNG files named 00.png..; empty uses built-in symbols")
+	symbolDirShort := flag.String("s", "", "short alias for -symbols")
 	flag.Parse()
+
+	if *cellShort != "" {
+		*cell = *cellShort
+	}
+	cellSpec, err := app.ParseCellSpec(*cell, app.CellSpec{Tile: *tile, ShapeBits: *shapeBits, ColorBits: *colorBits})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "invalid cell spec: %v\n", err)
+		os.Exit(1)
+	}
+	*tile = cellSpec.Tile
+	*shapeBits = cellSpec.ShapeBits
+	*colorBits = cellSpec.ColorBits
+	if *packetsShort > 0 {
+		*packetsPerFrame = *packetsShort
+	}
+	if *regionShort != "" {
+		*region = *regionShort
+	}
+	if *fpsShort > 0 {
+		*fps = *fpsShort
+	}
+	if *symbolDirShort != "" {
+		*symbolDir = *symbolDirShort
+	}
 
 	if *listDisplays {
 		for i, bounds := range app.DisplayBounds() {
@@ -44,7 +75,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	if *screen {
+	if *screen && !*pngMode {
 		spec, err := app.ParseTileSpec(*tile, *shapeBits)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "invalid tile spec: %v\n", err)
