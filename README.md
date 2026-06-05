@@ -212,6 +212,7 @@ decoder 进度中的 `cap`、`dec`、`pkt v/r/u`、`bad`、`spd`、`ema` 含义�
 - `spd`：当前窗口瞬时速度
 - `ema`：近期滑动平滑速度，使用 EMA，避免等待首帧时间拉低显示值
 - decoder 每秒追加一行进度日志，便于保存后分析，不会覆盖清除上一秒记录
+- `-decode-workers` 可开启/调整并行 cell decode；默认自动选择，设为 `1` 可回到串行 decode
 - 完成后会打印 `summary`，其中总时间从首个有效帧开始计算，不包含等待 encoder 启动的时间
 
 ## 参数参考
@@ -267,6 +268,7 @@ decoder 进度中的 `cap`、`dec`、`pkt v/r/u`、`bad`、`spd`、`ema` 含义�
 -r             -R 的短参数
 -fps           截图频率，默认 120
 -f             -fps 的短参数
+-decode-workers 并行截图 decode worker 数，0 表示自动选择
 -timeout       截图解码超时
 -symbols       可选符号目录；为空时使用内置符号
 -s             -symbols 的短参数

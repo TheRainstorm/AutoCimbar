@@ -30,6 +30,7 @@ func main() {
 	regionShort := flag.String("r", "", "short alias for -R")
 	fps := flag.Int("fps", 120, "screen capture rate")
 	fpsShort := flag.Int("f", 0, "short alias for -fps")
+	decodeWorkers := flag.Int("decode-workers", 0, "parallel screen decode workers, 0 chooses automatically")
 	timeout := flag.Duration("timeout", 5*time.Minute, "screen decode timeout")
 	listDisplays := flag.Bool("list-displays", false, "list detected display indexes and bounds")
 	symbolDir := flag.String("symbols", app.DefaultSymbolDir, "optional directory containing symbol PNG files named 00.png..; empty uses built-in symbols")
@@ -91,6 +92,7 @@ func main() {
 			PacketsPerFrame: *packetsPerFrame,
 			Region:          *region,
 			FPS:             *fps,
+			DecodeWorkers:   *decodeWorkers,
 			Timeout:         *timeout,
 			Progress:        os.Stderr,
 		}); err != nil {

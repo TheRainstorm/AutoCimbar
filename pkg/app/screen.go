@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"io"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -48,6 +49,7 @@ type ScreenDecodeConfig struct {
 	PacketsPerFrame int
 	Region          string
 	FPS             int
+	DecodeWorkers   int
 	Timeout         time.Duration
 	Progress        io.Writer
 }
@@ -217,6 +219,16 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 	if err != nil {
 		return err
 	}
+	decodeWorkers := normalizeDecodeWorkers(cfg.DecodeWorkers)
+	codecDecoders := make([]*codec.Decoder, decodeWorkers)
+	codecDecoders[0] = codecDec
+	for i := 1; i < decodeWorkers; i++ {
+		dec, err := codec.NewDecoderWithColorBits(symRec, colorRec, CellSizeForSpec(cfg.Scale, spec), cfg.GridSize, colorBits)
+		if err != nil {
+			return err
+		}
+		codecDecoders[i] = dec
+	}
 	var fountainDec *fountain.Decoder
 	blockCount := 0
 	fileSize := -1
@@ -240,18 +252,21 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 	progress := newScreenDecoderProgress(cfg.Progress, blockSize)
 	defer progress.finishLine()
 
-	frames := make(chan *capturedScreenFrame, 1)
-	freeBuffers := make(chan []byte, 4)
+	frames := make(chan *capturedScreenFrame, decodeWorkers)
+	decodedFrames := make(chan decodedScreenFrame, decodeWorkers)
+	freeBuffers := make(chan []byte, decodeWorkers*2+2)
 	captureErr := make(chan error, 1)
 	stopCapture := make(chan struct{})
 	captureDone := make(chan struct{})
 	go runScreenCaptureLoop(capturer, interval, progress, frames, freeBuffers, captureErr, stopCapture, captureDone)
+	decodeDone := make(chan struct{})
+	go runScreenDecodeWorkers(codecDecoders, frames, decodedFrames, freeBuffers, progress, stopCapture, decodeDone)
 	defer func() {
 		close(stopCapture)
 		<-captureDone
+		<-decodeDone
 	}()
 
-	var encodedFrameBuf []byte
 	var packetBuf []byte
 	seenFrameIDs := make(map[uint32]struct{})
 	for time.Now().Before(deadline) {
@@ -260,9 +275,9 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 			break
 		}
 		timeout := time.NewTimer(remaining)
-		var captured *capturedScreenFrame
+		var decoded decodedScreenFrame
 		select {
-		case captured = <-frames:
+		case decoded = <-decodedFrames:
 		case err := <-captureErr:
 			timeout.Stop()
 			if errors.Is(err, ErrScreenCapture) {
@@ -279,14 +294,10 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 			}
 		}
 
-		encodedFrame, err := decodeCapturedFrame(codecDec, captured, encodedFrameBuf)
-		recycleCapturedFrame(captured, freeBuffers)
-		if err != nil {
-			progress.noteInvalid()
+		if decoded.Err != nil {
 			continue
 		}
-		progress.noteDecoded()
-		encodedFrameBuf = encodedFrame
+		encodedFrame := decoded.Data
 		packetBytes := packetCodec.EncodedSize()
 		for packetIndex := 0; packetIndex < packetsPerFrame; packetIndex++ {
 			start := packetIndex * packetBytes
@@ -400,11 +411,77 @@ func runScreenCaptureLoop(capturer *screenCapturer, interval time.Duration, prog
 	}
 }
 
+type decodedScreenFrame struct {
+	Data []byte
+	Err  error
+}
+
+func runScreenDecodeWorkers(decoders []*codec.Decoder, frames <-chan *capturedScreenFrame, decoded chan<- decodedScreenFrame, freeBuffers chan<- []byte, progress *screenDecoderProgress, stop <-chan struct{}, done chan<- struct{}) {
+	var wg sync.WaitGroup
+	wg.Add(len(decoders))
+	for _, dec := range decoders {
+		go func(dec *codec.Decoder) {
+			defer wg.Done()
+			var frameBuf []byte
+			for {
+				select {
+				case <-stop:
+					return
+				case captured := <-frames:
+					if captured == nil {
+						continue
+					}
+					encodedFrame, err := decodeCapturedFrame(dec, captured, frameBuf)
+					recycleCapturedFrame(captured, freeBuffers)
+					if err != nil {
+						progress.noteInvalid()
+						select {
+						case decoded <- decodedScreenFrame{Err: err}:
+						case <-stop:
+						}
+						continue
+					}
+					progress.noteDecoded()
+					frameBuf = encodedFrame
+					out := append([]byte(nil), encodedFrame...)
+					select {
+					case decoded <- decodedScreenFrame{Data: out}:
+					case <-stop:
+						return
+					}
+				}
+			}
+		}(dec)
+	}
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+}
+
 func decodeCapturedFrame(dec *codec.Decoder, frame *capturedScreenFrame, dst []byte) ([]byte, error) {
 	if frame.BGRA {
 		return dec.DecodeBGRAInto(frame.Pix, frame.Width, frame.Height, frame.Stride, dst)
 	}
 	return dec.DecodeInto(frame.Img, dst)
+}
+
+func normalizeDecodeWorkers(workers int) int {
+	if workers > 0 {
+		return workers
+	}
+	cpus := runtime.NumCPU()
+	if cpus <= 2 {
+		return 1
+	}
+	workers = cpus / 2
+	if workers > 4 {
+		workers = 4
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	return workers
 }
 
 func recycleCapturedFrame(frame *capturedScreenFrame, freeBuffers chan<- []byte) {
