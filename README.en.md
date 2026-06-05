@@ -1,16 +1,15 @@
-# AutoCamBar
+# AutoCimBar
 
-Cheers: AutoCamBar has reached the long-awaited 1 MB/s milestone.
-
-AutoCamBar transfers files over a one-way screen channel. The encoder renders high-density colored symbol frames on screen, and the decoder captures a configured screen region to reconstruct the file. Runtime parameters are agreed out of band, so frames carry only real transfer data.
+AutoCimBar is a one-way file transfer tool that uses the screen channel of a remote desktop or game-streaming session. The encoder renders a file as high-density colored symbol frames on screen, inspired by [cimbar](https://github.com/sz3/cimbar), and the decoder captures a configured screen region to recover the file. It combines fountain coding, ECC, packet CRC, compression, and file-level MD5 verification. Current real-world tests have already broken the long-awaited 1 MB/s barrier.
 
 [中文 README](README.md)
 
-## Current Results
+## Experimental Results
 
-The recommended default cell is now `-c 4t4s8c`.
+Current measurements over an RDP remote session:
 
-`-c 4t4s8c` (`-packets 8` when `-Q 130`)
+- `-c 4t4s8c` (`-packets 8` when `-Q 130`)
+- Effective decode FPS is capped at about 30 FPS due to remote desktop limits
 
 | -Q  | speed       |
 | --- | ----------- |
@@ -19,16 +18,17 @@ The recommended default cell is now `-c 4t4s8c`.
 | 26  | 114 KB/s    |
 | 130 | 1310.4 KB/s |
 
+Moonlight behaves differently from locally rendered RDP frames because it transports a video stream. Extracting data from the compressed video image is harder; the current 60 FPS Moonlight result is 243 KB/s.
+
 ## Features
 
-- Screen mode by default, with `-Q 120 -fps 120 -ecc 3 -c 4t4s8c`
-- zstd source compression by default, with streaming decompression and MD5 verification
+- zstd source compression by default, with streaming decompression and file MD5 verification
 - Per-packet CRC to reject bad packets early when ECC is disabled or weak
-- Per-frame Reed-Solomon ECC with interleaving
+- Per-frame Reed-Solomon ECC with interleaving, useful for local damage from GPU/video compression
 - Linear fountain code for dropped, repeated, and redundant frames
-- Native borderless topmost encoder window on Windows
-- Common tile sets embedded in the executable
-- `-backend qr` for speed comparison against a standard QR code backend
+- Native borderless topmost encoder window on Windows, no browser required
+- Common tile symbol sets embedded in the executable, so a single exe can run directly
+- `-backend qr` for comparing the standard QR code backend with the symbols backend
 
 ## Build
 
@@ -42,16 +42,7 @@ go build -o bin/decoder ./cmd/decoder
 go build -o bin/tilegen ./cmd/tilegen
 ```
 
-Windows PowerShell:
-
-```powershell
-go test ./...
-go build -o bin\encoder.exe .\cmd\encoder
-go build -o bin\decoder.exe .\cmd\decoder
-go build -o bin\tilegen.exe .\cmd\tilegen
-```
-
-Cross-compile Windows binaries:
+Cross-compile Windows binaries on Linux/macOS:
 
 ```bash
 GOOS=windows GOARCH=amd64 go build -o bin/encoder.exe ./cmd/encoder
@@ -60,53 +51,19 @@ GOOS=windows GOARCH=amd64 go build -o bin/decoder.exe ./cmd/decoder
 
 ## Quick Start
 
-Recommended screen transfer:
+Screen transfer:
 
 ```bash
-./bin/encoder -i input.bin -RQ 120 -p 3 -r 0
-./bin/decoder -o output.bin -RQ 120 -p 3 -r 1
+./bin/encoder -i input.bin -RQ 120 -r 0
+./bin/decoder -o output.bin -RQ 120 -r 1
 ```
 
-High-throughput experiment:
-
-```bash
-./bin/encoder -i 10M.bin -f 200 -RQ 130 -p 8 -r 0
-./bin/decoder -o out.bin -f 120 -RQ 130 -p 8 -r 1
-```
-
-Offline PNG test:
+Offline PNG verification:
 
 ```bash
 ./bin/encoder -png -i input.bin -o frames -RQ 80
 ./bin/decoder -png -i frames -o output.bin -RQ 80
 ```
-
-The decoder prints the output MD5 after completion. A source MD5 mismatch is treated as an error.
-
-## QR Backend
-
-Default high-speed symbols backend:
-
-```bash
-./bin/encoder -i input.bin -RQ 120
-./bin/decoder -o output.bin -RQ 120
-```
-
-Standard QR code backend:
-
-```bash
-./bin/encoder -backend qr -i input.bin -Q 33 -B 4
-./bin/decoder -backend qr -o output.bin -Q 33 -B 4
-```
-
-PNG comparison:
-
-```bash
-./bin/encoder -png -backend qr -i input.bin -o qr_frames -Q 33 -B 4
-./bin/decoder -png -backend qr -i qr_frames -o output.bin -Q 33 -B 4
-```
-
-`-backend qr` reuses the existing zstd, packet CRC, ECC, fountain code, and MD5 verification layers. Only the frame renderer/reader changes. QR `-Q` maps to the closest QR version.
 
 ## Common Options
 
@@ -129,8 +86,8 @@ PNG comparison:
 
 Region examples:
 
-- `-r 0`: screen 0, bottom-right
-- `-r 1`: screen 1, bottom-right
+- `-r 0`: screen 0, bottom-right by default
+- `-r 1`: screen 1, bottom-right by default
 - `-r 1:c:c`: center on screen 1
 - `-r c:c`: center on screen 0
 - `-r 1:100:200`: position `(100, 200)` on screen 1
@@ -150,18 +107,13 @@ Default `-c 4t4s8c` means:
 -tile 4x4 -shape-bits 4 -color-bits 8
 ```
 
-Embedded tile sets:
+`-cell` syntax:
 
-```text
-8x8_5bit   32 symbols
-8x8_6bit   64 symbols
-6x6_4bit   16 symbols
-4x4_4bit   16 symbols
-4x4_3bit    8 symbols
-4x4_2bit    4 symbols
-```
+- `4t` means `-tile 4x4`
+- `4s` means `-shape-bits 4`
+- `8c` means `-color-bits 8`
 
-Generate a new tile set:
+Generate a new symbol set:
 
 ```bash
 ./bin/tilegen -tile 8x8 -shape-bits 6 -o generated-tiles/8x8_6bit_custom -seed 123 -attempts 20000
@@ -169,37 +121,43 @@ Generate a new tile set:
 
 When using an external symbol directory, both sides must use the same `-symbols`, `-tile`, and `-shape-bits`.
 
-## Progress Log
+## Decode Output
 
-The decoder appends one line per second:
+The decoder appends one progress line per second so logs can be saved and analyzed later:
 
 ```text
 fields: cap=capture fps, dec=cell decode fps, pkt v/r/u=valid/repeat/useful packet fps, bad=invalid packet fps, spd=current KB/s, ema=smoothed KB/s
 ```
 
+Meaning:
+
 - `cap`: capture FPS
-- `dec`: cell decode FPS
-- `pkt v/r/u`: valid, repeated, and useful packets per second
-- `bad`: invalid packets per second
+- `dec`: completed cell decode FPS
+- `pkt v/r/u`: valid packets / repeated packets / useful packets that increase fountain rank
+- `bad`: packets rejected by CRC, ECC, parameter mismatch, or parse failure
 - `spd`: current-window speed
 - `ema`: smoothed recent speed
 
-The final summary excludes time spent waiting for the first valid encoder frame.
+The final decoder summary measures transfer time from the first valid frame, excluding time spent waiting for the encoder to start.
 
-## Tests
+## Automated Tests
 
 ```bash
 go test ./...
 ```
 
-Tests cover PNG round trips, QR backend PNG round trips, ECC, packet CRC, fountain recovery, zstd/MD5, generated tile specs, and screen frame source decoding.
+Tests cover PNG end-to-end transfer, QR backend PNG round trip, ECC, packet CRC, fountain recovery, zstd/MD5, dynamic tile symbol sets, and screen frame source decoding.
 
-## Limitations
+## Current Limitations
 
-- The current fountain code is a linear XOR fountain. The decoder derives block count from transfer size carried in the packet header.
-- `Q/RQ`, `B`, `-ecc`, `-c`, `-packets`, and `-backend` are runtime agreements and are not written into every frame.
-- `-backend qr` is for comparison. The fastest path is still the symbols backend.
-- Non-Windows screen encoder mode currently uses the HTTP/browser fallback.
+- The current fountain code is a linear XOR scheme. The decoder derives `blockCount` from the transfer size carried in each packet.
+- `Q/RQ`, `B`, `-ecc`, `-c`, `-packets`, `-backend`, and other runtime parameters are agreed out of band and are not written into every frame.
+- `-backend qr` is for comparison and is not the highest-throughput path. The fastest path is still the symbols backend.
+- Non-Windows encoder screen mode currently uses the HTTP/browser fallback.
+
+## Credits
+
+- https://github.com/sz3/libcimbar
 
 ## License
 

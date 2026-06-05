@@ -1,8 +1,6 @@
-# AutoCamBar
+# AutoCimBar
 
-已经实现了梦寐以求的 1MB/s 大关
-
-AutoCamBar 是一个面向远程桌面、串流画面和单向屏幕信道的文件传输工具。encoder 把文件编码成屏幕上的高密度彩色符号帧，decoder 从指定屏幕区域截图并恢复文件。运行参数由两端提前约定，帧里只放真正传输数据。
+AutoCimBar 是一个利用远程桌面（或串流画面）的屏幕信道，进行单向文件传输的工具。encoder 把文件编码成屏幕上的高密度彩色符号帧（参考 [cimbar](https://github.com/sz3/cimbar)），decoder 从指定屏幕区域截图并恢复文件。采用喷泉码、ECC 等技术，实现高效的数据传输，目前实测已经突破了梦寐以求的 1MB/s 大关。
 
 [English README](README.en.md)
 
@@ -19,6 +17,8 @@ AutoCamBar 是一个面向远程桌面、串流画面和单向屏幕信道的文
 | 20  | 61 KB/s     |
 | 26  | 114 KB/s    |
 | 130 | 1310.4 KB/s |
+
+moonlight 由于传输的是视频流和 RDP 本地渲染画面有较大差别，从画面中提取数据更加困难，目前 60fps 下可以实现 243 KB/s 的速度。
 
 ## 功能概览
 
@@ -156,6 +156,10 @@ go test ./...
 - `Q/RQ`、`B`、`-ecc`、`-c`、`-packets`、`-backend` 等参数是运行时约定，不写入每帧数据。
 - `-backend qr` 用于对比，不是当前最高吞吐路径；最高吞吐路径仍是 symbols backend。
 - 非 Windows 平台 encoder screen 模式使用 HTTP/浏览器 fallback。
+
+## Credits
+
+- https://github.com/sz3/libcimbar
 
 ## License
 
