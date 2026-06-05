@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash/crc32"
 
 	"github.com/autocambar/autocambar/pkg/codec"
 	"github.com/autocambar/autocambar/pkg/ecc"
@@ -11,7 +12,7 @@ import (
 
 const (
 	FrameMagic            = uint32(0x41434231) // "ACB1"
-	FrameHeaderSize       = 16
+	FrameHeaderSize       = 20
 	SourceMagic           = uint32(0x41435331) // "ACS1"
 	SourceHeaderSize      = 32
 	SourceCompressionNone = uint32(0)
@@ -19,6 +20,7 @@ const (
 )
 
 var ErrInvalidFrameMagic = errors.New("invalid frame magic")
+var ErrInvalidFrameCRC = errors.New("invalid frame crc")
 
 type Frame struct {
 	FileSize int
@@ -120,8 +122,8 @@ func NewFramePacketCodecWithColorBitsAndPackets(gridSize int, eccPercent int, bl
 }
 
 func CellBitsForColorBits(colorBits int) (int, error) {
-	if colorBits < 1 || colorBits > 4 {
-		return 0, fmt.Errorf("color bits must be 1, 2, 3, or 4, got %d", colorBits)
+	if colorBits < 0 || colorBits > 8 {
+		return 0, fmt.Errorf("color bits must be 0..8, got %d", colorBits)
 	}
 	return codec.ShapeBits + colorBits, nil
 }
@@ -164,7 +166,9 @@ func BuildPacketInto(packet []byte, fileSize int, frameID uint32, payload []byte
 	binary.BigEndian.PutUint32(packet[0:4], FrameMagic)
 	binary.BigEndian.PutUint64(packet[4:12], uint64(fileSize))
 	binary.BigEndian.PutUint32(packet[12:16], frameID)
+	binary.BigEndian.PutUint32(packet[16:20], 0)
 	copy(packet[FrameHeaderSize:], payload)
+	binary.BigEndian.PutUint32(packet[16:20], packetCRC(packet))
 	return packet
 }
 
@@ -176,6 +180,10 @@ func ParsePacket(data []byte, blockSize int) (*Frame, error) {
 	magic := binary.BigEndian.Uint32(data[0:4])
 	if magic != FrameMagic {
 		return nil, fmt.Errorf("%w: got 0x%08x", ErrInvalidFrameMagic, magic)
+	}
+	wantCRC := binary.BigEndian.Uint32(data[16:20])
+	if gotCRC := packetCRC(data[:FrameHeaderSize+blockSize]); gotCRC != wantCRC {
+		return nil, fmt.Errorf("%w: got 0x%08x, want 0x%08x", ErrInvalidFrameCRC, gotCRC, wantCRC)
 	}
 
 	fileSize := binary.BigEndian.Uint64(data[4:12])
@@ -190,4 +198,14 @@ func ParsePacket(data []byte, blockSize int) (*Frame, error) {
 		FrameID:  binary.BigEndian.Uint32(data[12:16]),
 		Payload:  payload,
 	}, nil
+}
+
+func packetCRC(packet []byte) uint32 {
+	if len(packet) < FrameHeaderSize {
+		return 0
+	}
+	crc := crc32.NewIEEE()
+	_, _ = crc.Write(packet[4:16])
+	_, _ = crc.Write(packet[FrameHeaderSize:])
+	return crc.Sum32()
 }

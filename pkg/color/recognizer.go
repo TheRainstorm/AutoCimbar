@@ -1,6 +1,7 @@
 package color
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"math"
@@ -28,6 +29,11 @@ const (
 	// NumColors16 16 色模式的颜色数量
 	NumColors16 = 16
 )
+
+// Color1Palette 0-bit color mode uses one foreground color and stores no data in color.
+var Color1Palette = []color.RGBA{
+	{R: 0, G: 255, B: 0, A: 255},
+}
 
 // Color2Palette 2 色调色板。使用 4 色模式的前 2 项，便于低误码链路测试。
 var Color2Palette = []color.RGBA{
@@ -99,6 +105,26 @@ func NewRecognizer2Color() *Recognizer {
 	return NewRecognizer(Color2Palette)
 }
 
+func NewRecognizerForBits(colorBits int) (*Recognizer, error) {
+	if colorBits < 0 || colorBits > 8 {
+		return nil, fmt.Errorf("color bits must be 0..8, got %d", colorBits)
+	}
+	switch colorBits {
+	case 0:
+		return NewRecognizer(Color1Palette), nil
+	case 1:
+		return NewRecognizer2Color(), nil
+	case 2:
+		return NewRecognizer4Color(), nil
+	case 3:
+		return NewRecognizer8Color(), nil
+	case 4:
+		return NewRecognizer16Color(), nil
+	default:
+		return NewRecognizer(generateExtendedPalette(1 << colorBits)), nil
+	}
+}
+
 // NewRecognizer4Color 创建 4 色识别器
 func NewRecognizer4Color() *Recognizer {
 	return NewRecognizer(Color4Palette)
@@ -110,6 +136,65 @@ func NewRecognizer8Color() *Recognizer {
 
 func NewRecognizer16Color() *Recognizer {
 	return NewRecognizer(Color16Palette)
+}
+
+func generateExtendedPalette(size int) []color.RGBA {
+	palette := make([]color.RGBA, 0, size)
+	for _, c := range Color16Palette {
+		if len(palette) >= size {
+			return palette
+		}
+		palette = append(palette, c)
+	}
+
+	levels := []uint8{0, 51, 102, 153, 204, 255}
+	for _, r := range levels {
+		for _, g := range levels {
+			for _, b := range levels {
+				if len(palette) >= size {
+					return palette
+				}
+				c := color.RGBA{R: r, G: g, B: b, A: 255}
+				if max3(r, g, b) < 96 || containsColor(palette, c) {
+					continue
+				}
+				palette = append(palette, c)
+			}
+		}
+	}
+
+	var x uint32 = 0x9e3779b9
+	for len(palette) < size {
+		x += 0x9e3779b9
+		r := uint8((x >> 16) & 0xff)
+		g := uint8((x >> 8) & 0xff)
+		b := uint8(x & 0xff)
+		c := color.RGBA{R: r, G: g, B: b, A: 255}
+		if max3(r, g, b) < 96 || containsColor(palette, c) {
+			continue
+		}
+		palette = append(palette, c)
+	}
+	return palette
+}
+
+func containsColor(palette []color.RGBA, c color.RGBA) bool {
+	for _, p := range palette {
+		if p == c {
+			return true
+		}
+	}
+	return false
+}
+
+func max3(a, b, c uint8) uint8 {
+	if b > a {
+		a = b
+	}
+	if c > a {
+		a = c
+	}
+	return a
 }
 
 func NewRecognizer(palette []color.RGBA) *Recognizer {

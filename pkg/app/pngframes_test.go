@@ -114,7 +114,7 @@ func TestPNGFrameFountainRoundTripWithECC(t *testing.T) {
 }
 
 func TestPNGFrameFountainRoundTripVariableColorBits(t *testing.T) {
-	for _, colorBits := range []int{1, 3, 4} {
+	for _, colorBits := range []int{0, 1, 3, 4, 5, 8} {
 		t.Run(fmt.Sprintf("colorBits%d", colorBits), func(t *testing.T) {
 			dir := t.TempDir()
 			inputPath := filepath.Join(dir, "input.bin")

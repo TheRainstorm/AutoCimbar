@@ -36,6 +36,14 @@ func TestBuildParsePacketRoundTrip(t *testing.T) {
 	}
 }
 
+func TestParsePacketRejectsCRCMismatch(t *testing.T) {
+	packet := BuildPacket(1234, 7, []byte{1, 2, 3, 4})
+	packet[len(packet)-1] ^= 0x01
+	if _, err := ParsePacket(packet, 4); !errors.Is(err, ErrInvalidFrameCRC) {
+		t.Fatalf("ParsePacket error = %v, want ErrInvalidFrameCRC", err)
+	}
+}
+
 func TestBuildPacketIntoRoundTrip(t *testing.T) {
 	payload := []byte{1, 3, 5, 7}
 	buf := make([]byte, 0, FrameHeaderSize+len(payload))

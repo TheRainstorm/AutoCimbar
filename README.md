@@ -4,7 +4,7 @@ AutoCamBar 是一个面向远程桌面截屏场景的文件传输工具。发送
 
 当前实现使用 Go：
 
-- 默认 4 色 × 16 符号，每个 cell 编码 6 bits；可用 `-color-bits 1/2/3/4` 选择 2/4/8/16 色，每个 cell 编码 5/6/7/8 bits
+- 默认 4 色 × 16 符号，每个 cell 编码 6 bits；可用 `-color-bits 0..8` 选择 1..256 色，每个 cell 编码 4..12 bits
 - 默认内置 16 个 libcimbar bitmap 符号，Windows 上单个 exe 可直接运行
 - 原始文件传输前默认使用 zstd 压缩，恢复时流式解压并校验 MD5；可用 `-no-zstd` 关闭
 - 纯 Go 线性喷泉码，支持冗余帧和丢帧恢复
@@ -119,7 +119,7 @@ decoder 也会在喷泉码恢复完成后校验内置的文件级 MD5；校验�
 - `-R X:Y` 或 `-R SCREEN:X:Y`：播放窗口位置；省略 `SCREEN` 时默认主屏 0
 - 负数从该屏幕右/下边缘定位；`0:-0:-0` 表示主屏右下角贴边
 - `-fps`：窗口刷新帧率
-- `-color-bits`：颜色通道位数，`1/2/3/4` 对应 2/4/8/16 色；encoder 和 decoder 必须一致
+- `-color-bits`：颜色通道位数，`0..8` 对应 1..256 色；encoder 和 decoder 必须一致
 - `-packets`：每张屏幕图携带的独立 packet 数，默认 1；提高后局部错误只丢对应 packet，encoder 和 decoder 必须一致
 - `-no-zstd`：关闭默认 zstd 压缩，直接传输原始文件数据
 
@@ -165,7 +165,7 @@ decoder 也会在喷泉码恢复完成后校验内置的文件级 MD5；校验�
 -Q             grid cell 数，默认 120
 -B             cell 缩放倍数，实际 cell 像素为 8 * B
 -ecc           单帧 Reed-Solomon ECC 百分比，默认 3；必须与 decoder 一致
--color-bits    颜色通道位数，1/2/3/4 表示 2/4/8/16 色；默认 2
+-color-bits    颜色通道位数，0..8 表示 1..256 色；默认 2
 -packets       屏幕模式每张图携带的独立 packet 数，默认 1；必须与 decoder 一致
 -no-zstd       关闭默认 zstd 压缩
 -screen        启用屏幕播放模式
@@ -186,7 +186,7 @@ decoder 也会在喷泉码恢复完成后校验内置的文件级 MD5；校验�
 -Q             grid cell 数，默认 120；必须与 encoder 一致
 -B             cell 缩放倍数，必须与 encoder 一致
 -ecc           单帧 Reed-Solomon ECC 百分比，默认 3；必须与 encoder 一致
--color-bits    颜色通道位数，1/2/3/4 表示 2/4/8/16 色；默认 2
+-color-bits    颜色通道位数，0..8 表示 1..256 色；默认 2
 -packets       屏幕模式每张图携带的独立 packet 数，默认 1；必须与 encoder 一致
 -screen        启用截图解码模式
 -R             截图区域，格式 SCREEN:X:Y
@@ -218,7 +218,7 @@ go test ./...
 ## 当前限制
 
 - 当前喷泉码是纯 Go 线性 XOR 喷泉码，decoder 需要知道源块数量；实现方式是在每帧头携带文件大小，用于推导 `blockCount`。
-- 每帧头当前包含 `fileSize(8 bytes) + frameID(4 bytes)`，其余为喷泉编码块；`fileSize` 指喷泉传输数据大小。
+- 每个 packet 头当前包含 `fileSize(8 bytes) + frameID(4 bytes) + crc32(4 bytes)`，其余为喷泉编码块；`fileSize` 指喷泉传输数据大小，`crc32` 用于尽早丢弃错误 packet。
 - 原始文件默认会先进行 zstd 压缩，再加一个一次性源数据头，包含原始文件大小、压缩方式和 MD5，用于最终完整性校验；它不是每帧参数。使用 `-no-zstd` 时源数据头会标记为未压缩。
 - `-ecc`、`-color-bits` 和 `-packets` 是运行时约定参数，不写入帧头；开启 ECC 后会减少每个 packet 的 fountain payload，并在 packet 内添加交织后的 RS 校验字节。
 - Windows 屏幕模式使用 Win32 原生窗口；非 Windows 平台暂时使用 HTTP/浏览器 fallback。

@@ -155,10 +155,13 @@ func TestBytesToCellsRoundTripVariableColorBits(t *testing.T) {
 		colorRec     *colorpkg.Recognizer
 		expectedCell int
 	}{
+		{"shapeOnly", 0, mustColorRecognizerForBits(t, 0), 4},
 		{"2color", 1, colorpkg.NewRecognizer2Color(), 5},
 		{"4color", 2, colorpkg.NewRecognizer4Color(), 6},
 		{"8color", 3, colorpkg.NewRecognizer8Color(), 7},
 		{"16color", 4, colorpkg.NewRecognizer16Color(), 8},
+		{"32color", 5, mustColorRecognizerForBits(t, 5), 9},
+		{"256color", 8, mustColorRecognizerForBits(t, 8), 12},
 	}
 
 	for _, tt := range tests {
@@ -186,6 +189,15 @@ func TestBytesToCellsRoundTripVariableColorBits(t *testing.T) {
 			}
 		})
 	}
+}
+
+func mustColorRecognizerForBits(t *testing.T, colorBits int) *colorpkg.Recognizer {
+	t.Helper()
+	rec, err := colorpkg.NewRecognizerForBits(colorBits)
+	if err != nil {
+		t.Fatalf("NewRecognizerForBits(%d) failed: %v", colorBits, err)
+	}
+	return rec
 }
 
 func TestBytesToCells16ColorNibbles(t *testing.T) {

@@ -34,7 +34,7 @@ type Encoder struct {
 	gridSize         int // Q 参数，grid 的大小
 	colorBits        int
 	cellBits         int
-	colorMask        uint8
+	colorMask        uint16
 	templateMasks    [symbol.NumSymbols][64]bool
 	templatesReady   [symbol.NumSymbols]bool
 	tileCache        [][]byte
@@ -65,7 +65,7 @@ func NewEncoderWithColorBits(symbolRecognizer *symbol.Recognizer, colorRecognize
 		gridSize:         gridSize,
 		colorBits:        colorBits,
 		cellBits:         ShapeBits + colorBits,
-		colorMask:        uint8((1 << colorBits) - 1),
+		colorMask:        uint16((1 << colorBits) - 1),
 	}
 	e.templateMasks, e.templatesReady = buildTemplateMasks(symbolRecognizer)
 	e.buildTileCache()
@@ -120,7 +120,7 @@ func (e *Encoder) bytesToCells(data []byte) ([]Cell, error) {
 	bitIndex := 0
 	for i := 0; i < numCells; i++ {
 		// 读取一个 cell 的 bits（从左到右）
-		var bits uint8 = 0
+		var bits uint16 = 0
 		bitsRead := 0
 
 		for j := 0; j < e.cellBits && bitIndex < len(data)*8; j++ {
@@ -128,7 +128,7 @@ func (e *Encoder) bytesToCells(data []byte) ([]Cell, error) {
 			bitOffset := 7 - (bitIndex % 8)
 
 			bit := (data[byteIndex] >> bitOffset) & 1
-			bits = (bits << 1) | bit
+			bits = (bits << 1) | uint16(bit)
 
 			bitIndex++
 			bitsRead++
@@ -258,20 +258,20 @@ func (e *Encoder) buildTile(cellColor color.RGBA, shapeID symbol.SymbolID) []byt
 	return tile
 }
 
-func readCellBits(data []byte, cellIndex int, cellBits int) uint8 {
+func readCellBits(data []byte, cellIndex int, cellBits int) uint16 {
 	bitIndex := cellIndex * cellBits
 	byteIndex := bitIndex / 8
 	bitOffset := bitIndex % 8
 
-	var v uint32
-	for i := 0; i < 3; i++ {
+	var v uint64
+	for i := 0; i < 4; i++ {
 		if byteIndex+i >= len(data) {
 			break
 		}
-		v |= uint32(data[byteIndex+i]) << uint(16-8*i)
+		v |= uint64(data[byteIndex+i]) << uint(24-8*i)
 	}
-	mask := uint32((1 << cellBits) - 1)
-	return uint8((v >> uint(24-bitOffset-cellBits)) & mask)
+	mask := uint64((1 << cellBits) - 1)
+	return uint16((v >> uint(32-bitOffset-cellBits)) & mask)
 }
 
 func copyTileRGBA(dst []byte, stride int, xByte int, y int, cellSize int, tile []byte) {
@@ -346,7 +346,7 @@ type Decoder struct {
 	gridSize         int
 	colorBits        int
 	cellBits         int
-	colorMask        uint8
+	colorMask        uint16
 	templateMasks    [symbol.NumSymbols][64]bool
 	templatesReady   [symbol.NumSymbols]bool
 	foregroundPixels [symbol.NumSymbols][]image.Point
@@ -372,7 +372,7 @@ func NewDecoderWithColorBits(symbolRecognizer *symbol.Recognizer, colorRecognize
 		gridSize:         gridSize,
 		colorBits:        colorBits,
 		cellBits:         ShapeBits + colorBits,
-		colorMask:        uint8((1 << colorBits) - 1),
+		colorMask:        uint16((1 << colorBits) - 1),
 	}
 	d.templateMasks, d.templatesReady = buildTemplateMasks(symbolRecognizer)
 	d.buildForegroundPixels()
@@ -416,7 +416,7 @@ func (d *Decoder) DecodeInto(img image.Image, dst []byte) ([]byte, error) {
 		hash := d.cellHash(img, x, y)
 		shapeID, _ := d.symbolRecognizer.RecognizeHash(hash)
 		colorID := d.recognizeCellColorAt(img, x, y, shapeID)
-		writeCellBits(dst, i, d.cellBits, (uint8(colorID&colorpkg.ColorID(d.colorMask))<<ShapeBits)|uint8(shapeID))
+		writeCellBits(dst, i, d.cellBits, (uint16(colorID)&d.colorMask)<<ShapeBits|uint16(shapeID))
 	}
 
 	return dst, nil
@@ -457,7 +457,7 @@ func (d *Decoder) decodeRGBAInto(img *image.RGBA, bounds image.Rectangle, numCel
 		hash := d.cellHashRGBA(img, x, y)
 		shapeID, _ := d.symbolRecognizer.RecognizeHash(hash)
 		colorID := d.recognizeCellColorRGBA(img, x, y, shapeID)
-		writeCellBits(dst, i, d.cellBits, (uint8(colorID&colorpkg.ColorID(d.colorMask))<<ShapeBits)|uint8(shapeID))
+		writeCellBits(dst, i, d.cellBits, (uint16(colorID)&d.colorMask)<<ShapeBits|uint16(shapeID))
 	}
 }
 
@@ -469,11 +469,11 @@ func (d *Decoder) decodeBGRAInto(pix []byte, stride int, numCells int, dst []byt
 		hash := d.cellHashBGRA(pix, stride, x, y)
 		shapeID, _ := d.symbolRecognizer.RecognizeHash(hash)
 		colorID := d.recognizeCellColorBGRA(pix, stride, x, y, shapeID)
-		writeCellBits(dst, i, d.cellBits, (uint8(colorID&colorpkg.ColorID(d.colorMask))<<ShapeBits)|uint8(shapeID))
+		writeCellBits(dst, i, d.cellBits, (uint16(colorID)&d.colorMask)<<ShapeBits|uint16(shapeID))
 	}
 }
 
-func writeCellBits(dst []byte, cellIndex int, cellBits int, bits uint8) {
+func writeCellBits(dst []byte, cellIndex int, cellBits int, bits uint16) {
 	bitIndex := cellIndex * cellBits
 	for j := 0; j < cellBits && bitIndex < len(dst)*8; j++ {
 		bit := (bits >> (cellBits - 1 - j)) & 1
@@ -874,7 +874,7 @@ func (d *Decoder) cellsToBytes(cells []Cell) []byte {
 
 	bitIndex := 0
 	for _, cell := range cells {
-		bits := (uint8(cell.Color&colorpkg.ColorID(d.colorMask)) << ShapeBits) | uint8(cell.Shape)
+		bits := (uint16(cell.Color)&d.colorMask)<<ShapeBits | uint16(cell.Shape)
 
 		for j := 0; j < d.cellBits && bitIndex < len(data)*8; j++ {
 			bit := (bits >> (d.cellBits - 1 - j)) & 1
@@ -894,8 +894,8 @@ func (d *Decoder) cellsToBytes(cells []Cell) []byte {
 }
 
 func validateColorBits(colorRecognizer *colorpkg.Recognizer, colorBits int) error {
-	if colorBits < 1 || colorBits > 4 {
-		return fmt.Errorf("color bits must be 1, 2, 3, or 4, got %d", colorBits)
+	if colorBits < 0 || colorBits > 8 {
+		return fmt.Errorf("color bits must be 0..8, got %d", colorBits)
 	}
 	if colorRecognizer == nil {
 		return fmt.Errorf("color recognizer is nil")

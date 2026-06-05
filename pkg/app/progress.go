@@ -80,7 +80,7 @@ func (p *screenEncoderProgress) startSummary() {
 	fmt.Fprintf(p.out, "file=%d bytes source_payload=%d bytes compression=%s transfer=%d bytes md5=%s source_blocks=%d\n",
 		p.fileSize, p.compressedSize, SourceCompressionName(p.compression), p.transferSize, p.md5, p.blockCount)
 	fmt.Fprintf(p.out, "per-frame capacity: codec=%d bytes (%d bits), color_bits=%d, packets_per_frame=%d, actual_packet=%d bytes\n", p.frameCapacity, p.frameCapacity*8, p.colorBits, p.packetsPerFrame, packetBytes)
-	fmt.Fprintf(p.out, "  header=%d bytes: magic=ACB1 file_size=8 frame_id=4\n", FrameHeaderSize)
+	fmt.Fprintf(p.out, "  header=%d bytes: magic=ACB1 file_size=8 frame_id=4 crc32=4\n", FrameHeaderSize)
 	fmt.Fprintf(p.out, "  data_area=%d bytes after header\n", p.payloadBytes)
 	fmt.Fprintf(p.out, "  fountain_block=%d bytes: one encoded source block; last source block is zero-padded\n", p.blockSize)
 	if p.eccPercent > 0 {
