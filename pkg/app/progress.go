@@ -190,6 +190,7 @@ type screenDecoderProgress struct {
 	lastRecoveredByte int
 	smoothKB          float64
 	completed         bool
+	headerPrinted     bool
 	mu                sync.Mutex
 }
 
@@ -253,6 +254,7 @@ func (p *screenDecoderProgress) noteStarted(fileSize int, blockCount int) {
 	p.lastRecoveredByte = 0
 	p.smoothKB = 0
 	fmt.Fprintf(p.out, "\nvalid frame detected: transfer=%d bytes blocks=%d block=%d bytes\n", fileSize, blockCount, p.blockSize)
+	p.printHeader()
 }
 
 func (p *screenDecoderProgress) noteValid(rank int, added bool, duplicate bool) {
@@ -292,7 +294,6 @@ func (p *screenDecoderProgress) finishLine() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.render(true)
-	fmt.Fprintln(p.out)
 	if p.completed && p.fileSize >= 0 && !p.transferStart.IsZero() {
 		elapsed := p.completeTime.Sub(p.transferStart)
 		if elapsed <= 0 {
@@ -338,9 +339,11 @@ func (p *screenDecoderProgress) render(force bool) {
 	}
 
 	if p.fileSize < 0 {
-		fmt.Fprintf(p.out, "\rwait cap=%4.0f dec=%4.0f pkt v/r/u=%4.0f/%4.0f/%4.0f bad=%4.0f bad_total=%d t=%s%s",
-			captureFPS, decodeFPS, validFPS, duplicateFPS, usefulFPS, invalidFPS, p.invalid, shortDuration(elapsed), clearLine())
+		p.printHeader()
+		fmt.Fprintf(p.out, "wait cap=%4.0f dec=%4.0f pkt v/r/u=%4.0f/%4.0f/%4.0f bad=%4.0f bad_total=%d t=%s\n",
+			captureFPS, decodeFPS, validFPS, duplicateFPS, usefulFPS, invalidFPS, p.invalid, shortDuration(elapsed))
 	} else {
+		p.printHeader()
 		progress := 1.0
 		if p.fileSize > 0 {
 			progress = float64(recovered) / float64(p.fileSize)
@@ -355,10 +358,10 @@ func (p *screenDecoderProgress) render(force bool) {
 		} else if recovered >= p.fileSize {
 			eta = "0s"
 		}
-		fmt.Fprintf(p.out, "\r%s cap=%4.0f dec=%4.0f pkt v/r/u=%4.0f/%4.0f/%4.0f bad=%4.0f spd=%6.0f ema=%6.0fKB/s data=%s/%s rank=%d/%d t=%s eta=%s%s",
+		fmt.Fprintf(p.out, "%s cap=%4.0f dec=%4.0f pkt v/r/u=%4.0f/%4.0f/%4.0f bad=%4.0f spd=%6.0f ema=%6.0fKB/s data=%s/%s rank=%d/%d t=%s eta=%s\n",
 			progressBar(progress, 18), captureFPS, decodeFPS, validFPS, duplicateFPS, usefulFPS, invalidFPS, currentKB, p.smoothKB,
 			formatBytes(recovered), formatBytes(p.fileSize), p.rank, p.blockCount,
-			shortDuration(transferElapsed), eta, clearLine())
+			shortDuration(transferElapsed), eta)
 	}
 
 	p.last = now
@@ -369,6 +372,14 @@ func (p *screenDecoderProgress) render(force bool) {
 	p.lastDuplicate = p.duplicate
 	p.lastInvalid = p.invalid
 	p.lastRecoveredByte = recovered
+}
+
+func (p *screenDecoderProgress) printHeader() {
+	if p.headerPrinted {
+		return
+	}
+	p.headerPrinted = true
+	fmt.Fprintln(p.out, "fields: cap=capture fps, dec=cell decode fps, pkt v/r/u=valid/repeat/useful packet fps, bad=invalid packet fps, spd=current KB/s, ema=smoothed KB/s")
 }
 
 func (p *screenDecoderProgress) recoveredBytes() int {
