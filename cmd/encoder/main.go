@@ -13,6 +13,7 @@ func main() {
 	input := flag.String("i", "", "input file")
 	outputDir := flag.String("o", "frames", "output PNG frame directory")
 	q := flag.Int("Q", 120, "grid size in cells")
+	rq := flag.Int("RQ", 0, "reference grid size for 8x8 tiles; when set, actual Q is scaled by 8/tile_width")
 	b := flag.Int("B", 1, "screen scale factor")
 	redundancy := flag.Int("redundancy", 10, "extra fountain frames as a percentage")
 	blockSize := flag.Int("block-size", 0, "fountain block size in bytes, 0 uses max frame payload")
@@ -44,6 +45,16 @@ func main() {
 	}
 
 	if *screen {
+		spec, err := app.ParseTileSpec(*tile, *shapeBits)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "invalid tile spec: %v\n", err)
+			os.Exit(1)
+		}
+		gridSize, err := app.ResolveGridSize(*q, *rq, spec)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "invalid grid size: %v\n", err)
+			os.Exit(1)
+		}
 		if runtime.GOOS == "windows" {
 			fmt.Println("screen encoder opening native Windows window")
 		} else {
@@ -51,7 +62,7 @@ func main() {
 		}
 		result, err := app.EncodeFileToScreen(app.ScreenEncodeConfig{
 			InputPath:       *input,
-			GridSize:        *q,
+			GridSize:        gridSize,
 			Scale:           *b,
 			SymbolDir:       *symbolDir,
 			BlockSize:       *blockSize,
@@ -83,7 +94,12 @@ func main() {
 		fmt.Fprintf(os.Stderr, "invalid tile spec: %v\n", err)
 		os.Exit(1)
 	}
-	result, err := app.EncodeFileToPNGFramesWithSpec(*input, *outputDir, *q, *b, *symbolDir, *redundancy, *blockSize, *eccPercent, !*noZstd, *colorBits, spec)
+	gridSize, err := app.ResolveGridSize(*q, *rq, spec)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "invalid grid size: %v\n", err)
+		os.Exit(1)
+	}
+	result, err := app.EncodeFileToPNGFramesWithSpec(*input, *outputDir, gridSize, *b, *symbolDir, *redundancy, *blockSize, *eccPercent, !*noZstd, *colorBits, spec)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "encoder failed: %v\n", err)
 		os.Exit(1)

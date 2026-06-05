@@ -319,7 +319,7 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 				continue
 			}
 			if _, ok := seenFrameIDs[frame.FrameID]; ok {
-				progress.noteValid(fountainDec.Rank(), false)
+				progress.noteValid(fountainDec.Rank(), false, true)
 				continue
 			}
 			seenFrameIDs[frame.FrameID] = struct{}{}
@@ -327,7 +327,7 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 			if err != nil {
 				return fmt.Errorf("add captured frame: %w", err)
 			}
-			progress.noteValid(fountainDec.Rank(), added)
+			progress.noteValid(fountainDec.Rank(), added, false)
 			if fountainDec.Complete() {
 				result, err := fountainDec.Decode()
 				if err != nil {

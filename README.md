@@ -85,6 +85,8 @@ generated-tiles/4x4_4bit   16 symbols, min hamming distance 4
 
 输出目录包含 `00.png..` 和 `manifest.json`。encoder 和 decoder 必须使用相同的 `-tile`、`-shape-bits` 和 `-symbols`，这些参数不写入每帧数据。
 
+如果希望不同 tile size 下显示面积大致一致，可以用 `-RQ` 代替手工换算 `-Q`。`-RQ` 表示以 `8x8` tile 为基准的参考 Q，程序会按 `actual_Q = ceil(RQ * 8 / tile_width)` 自动计算实际 Q。例如 `-RQ 120 -tile 4x4` 会使用实际 `Q=240`，显示宽度仍约等于 `120 * 8 * B` 像素。
+
 ## 快速验证：PNG 帧模式
 
 PNG 帧模式不需要真实屏幕，适合先确认程序能完整恢复文件。
@@ -191,6 +193,13 @@ decoder 也会在喷泉码恢复完成后校验内置的文件级 MD5；校验�
 
 两端必须使用一致的 `Q`、`B`、`-ecc`、`-color-bits`、`-shape-bits`、`-tile`、`-symbols` 和 `-packets`。文件大小会在当前线性喷泉码帧头中发送，decoder 不需要手动指定。
 
+decoder 进度中的 `packet_fps=valid:X repeat:Y useful:Z invalid_fps:W` 含义：
+
+- `valid`：通过 ECC/CRC/帧头校验的 packet 速率
+- `repeat`：有效但 frame id 已接收过的重复 packet 速率
+- `useful`：真正让喷泉码 rank 增加的 packet 速率
+- `invalid_fps`：截图已解码但 packet 校验失败、参数不匹配或内容错误的速率
+
 ## 参数参考
 
 ### encoder
@@ -199,6 +208,7 @@ decoder 也会在喷泉码恢复完成后校验内置的文件级 MD5；校验�
 -i             输入文件
 -o             PNG 帧输出目录，默认 frames
 -Q             grid cell 数，默认 120
+-RQ            以 8x8 tile 为基准的参考 Q；设置后自动按 tile 宽度换算实际 Q
 -B             cell 缩放倍数，实际 cell 像素为 tile_width * B
 -ecc           单帧 Reed-Solomon ECC 百分比，默认 3；必须与 decoder 一致
 -color-bits    颜色通道位数，0..8 表示 1..256 色；默认 2
@@ -222,6 +232,7 @@ decoder 也会在喷泉码恢复完成后校验内置的文件级 MD5；校验�
 -i             PNG 帧输入文件或目录，默认 frames
 -o             输出文件，默认 decoded.out
 -Q             grid cell 数，默认 120；必须与 encoder 一致
+-RQ            以 8x8 tile 为基准的参考 Q；设置后自动按 tile 宽度换算实际 Q
 -B             cell 缩放倍数，必须与 encoder 一致
 -ecc           单帧 Reed-Solomon ECC 百分比，默认 3；必须与 encoder 一致
 -color-bits    颜色通道位数，0..8 表示 1..256 色；默认 2

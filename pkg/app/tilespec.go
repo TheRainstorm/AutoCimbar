@@ -26,3 +26,16 @@ func ParseTileSpec(tile string, shapeBits int) (symbol.Spec, error) {
 	}
 	return symbol.NewSpec(width, height, shapeBits)
 }
+
+func ResolveGridSize(gridSize int, referenceGridSize int, spec symbol.Spec) (int, error) {
+	if referenceGridSize > 0 {
+		if err := spec.Validate(); err != nil {
+			return 0, err
+		}
+		gridSize = (referenceGridSize*symbol.DefaultTileWidth + spec.Width - 1) / spec.Width
+	}
+	if gridSize <= 0 {
+		return 0, fmt.Errorf("Q must be > 0")
+	}
+	return gridSize, nil
+}

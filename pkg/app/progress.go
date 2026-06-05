@@ -177,11 +177,14 @@ type screenDecoderProgress struct {
 	decoded           uint64
 	valid             uint64
 	useful            uint64
+	duplicate         uint64
 	invalid           uint64
 	lastCaptured      uint64
 	lastDecoded       uint64
 	lastValid         uint64
 	lastUseful        uint64
+	lastDuplicate     uint64
+	lastInvalid       uint64
 	lastRecoveredByte int
 	mu                sync.Mutex
 }
@@ -244,7 +247,7 @@ func (p *screenDecoderProgress) noteStarted(fileSize int, blockCount int) {
 	fmt.Fprintf(p.out, "\nvalid frame detected: transfer=%d bytes blocks=%d block=%d bytes\n", fileSize, blockCount, p.blockSize)
 }
 
-func (p *screenDecoderProgress) noteValid(rank int, added bool) {
+func (p *screenDecoderProgress) noteValid(rank int, added bool, duplicate bool) {
 	if p == nil {
 		return
 	}
@@ -253,6 +256,9 @@ func (p *screenDecoderProgress) noteValid(rank int, added bool) {
 	p.valid++
 	if added {
 		p.useful++
+	}
+	if duplicate {
+		p.duplicate++
 	}
 	p.rank = rank
 	p.render(false)
@@ -282,6 +288,8 @@ func (p *screenDecoderProgress) render(force bool) {
 	decodeFPS := float64(p.decoded-p.lastDecoded) / window.Seconds()
 	validFPS := float64(p.valid-p.lastValid) / window.Seconds()
 	usefulFPS := float64(p.useful-p.lastUseful) / window.Seconds()
+	duplicateFPS := float64(p.duplicate-p.lastDuplicate) / window.Seconds()
+	invalidFPS := float64(p.invalid-p.lastInvalid) / window.Seconds()
 	recovered := p.recoveredBytes()
 	currentKB := float64(recovered-p.lastRecoveredByte) / window.Seconds() / 1024
 	elapsed := now.Sub(p.start)
@@ -291,8 +299,8 @@ func (p *screenDecoderProgress) render(force bool) {
 	}
 
 	if p.fileSize < 0 {
-		fmt.Fprintf(p.out, "\rwaiting for valid frame capture_fps=%5.1f decode_fps=%5.1f valid_fps=%5.1f/%5.1f invalid=%d elapsed=%s%s",
-			captureFPS, decodeFPS, validFPS, usefulFPS, p.invalid, shortDuration(elapsed), clearLine())
+		fmt.Fprintf(p.out, "\rwaiting for valid frame capture_fps=%5.1f decode_fps=%5.1f packet_fps=valid:%5.1f repeat:%5.1f useful:%5.1f invalid_fps=%5.1f invalid=%d elapsed=%s%s",
+			captureFPS, decodeFPS, validFPS, duplicateFPS, usefulFPS, invalidFPS, p.invalid, shortDuration(elapsed), clearLine())
 	} else {
 		progress := 1.0
 		if p.fileSize > 0 {
@@ -308,8 +316,8 @@ func (p *screenDecoderProgress) render(force bool) {
 		} else if recovered >= p.fileSize {
 			eta = "0s"
 		}
-		fmt.Fprintf(p.out, "\r%s capture_fps=%5.1f decode_fps=%5.1f valid_fps=%5.1f/%5.1f speed=%7.1f KB/s avg=%7.1f KB/s data=%s/%s rank=%d/%d elapsed=%s eta=%s%s",
-			progressBar(progress, 24), captureFPS, decodeFPS, validFPS, usefulFPS, currentKB, averageKB,
+		fmt.Fprintf(p.out, "\r%s capture_fps=%5.1f decode_fps=%5.1f packet_fps=valid:%5.1f repeat:%5.1f useful:%5.1f invalid_fps=%5.1f speed=%7.1f KB/s avg=%7.1f KB/s data=%s/%s rank=%d/%d elapsed=%s eta=%s%s",
+			progressBar(progress, 24), captureFPS, decodeFPS, validFPS, duplicateFPS, usefulFPS, invalidFPS, currentKB, averageKB,
 			formatBytes(recovered), formatBytes(p.fileSize), p.rank, p.blockCount,
 			shortDuration(elapsed), eta, clearLine())
 	}
@@ -319,6 +327,8 @@ func (p *screenDecoderProgress) render(force bool) {
 	p.lastDecoded = p.decoded
 	p.lastValid = p.valid
 	p.lastUseful = p.useful
+	p.lastDuplicate = p.duplicate
+	p.lastInvalid = p.invalid
 	p.lastRecoveredByte = recovered
 }
 

@@ -13,6 +13,7 @@ func main() {
 	input := flag.String("i", "frames", "input PNG frame file or directory")
 	output := flag.String("o", "decoded.out", "output file")
 	q := flag.Int("Q", 120, "grid size in cells")
+	rq := flag.Int("RQ", 0, "reference grid size for 8x8 tiles; when set, actual Q is scaled by 8/tile_width")
 	b := flag.Int("B", 1, "screen scale factor")
 	blockSize := flag.Int("block-size", 0, "fountain block size in bytes, 0 uses max frame payload")
 	eccPercent := flag.Int("ecc", 3, "per-frame Reed-Solomon ECC percentage; encoder must use the same value")
@@ -40,9 +41,19 @@ func main() {
 			fmt.Fprintln(os.Stderr, "missing -R screen region")
 			os.Exit(2)
 		}
+		spec, err := app.ParseTileSpec(*tile, *shapeBits)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "invalid tile spec: %v\n", err)
+			os.Exit(1)
+		}
+		gridSize, err := app.ResolveGridSize(*q, *rq, spec)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "invalid grid size: %v\n", err)
+			os.Exit(1)
+		}
 		if err := app.DecodeScreenToFile(app.ScreenDecodeConfig{
 			OutputPath:      *output,
-			GridSize:        *q,
+			GridSize:        gridSize,
 			Scale:           *b,
 			SymbolDir:       *symbolDir,
 			BlockSize:       *blockSize,
@@ -73,7 +84,12 @@ func main() {
 		fmt.Fprintf(os.Stderr, "invalid tile spec: %v\n", err)
 		os.Exit(1)
 	}
-	if err := app.DecodePNGFramesToFileWithSpec(*input, *output, *q, *b, *symbolDir, *blockSize, *eccPercent, *colorBits, spec); err != nil {
+	gridSize, err := app.ResolveGridSize(*q, *rq, spec)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "invalid grid size: %v\n", err)
+		os.Exit(1)
+	}
+	if err := app.DecodePNGFramesToFileWithSpec(*input, *output, gridSize, *b, *symbolDir, *blockSize, *eccPercent, *colorBits, spec); err != nil {
 		fmt.Fprintf(os.Stderr, "decoder failed: %v\n", err)
 		os.Exit(1)
 	}
