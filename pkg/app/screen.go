@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"io"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -149,6 +150,10 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	sourcePayloadSize, err := SourcePayloadSize(sourceData)
+	if err != nil {
+		return nil, err
+	}
 	fountainEnc, err := fountain.NewEncoder(sourceData, blockSize)
 	if err != nil {
 		return nil, err
@@ -171,7 +176,8 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 		ECCBytes:        packetCodec.ParitySize(),
 		PacketBytes:     packetCodec.EncodedSize(),
 		FileSize:        fileSize,
-		CompressedSize:  len(sourceData) - SourceHeaderSize,
+		FileName:        filepath.Base(cfg.InputPath),
+		CompressedSize:  sourcePayloadSize,
 		TransferSize:    len(sourceData),
 		BlockSize:       fountainEnc.BlockSize(),
 		BlockCount:      fountainEnc.BlockCount(),
@@ -205,6 +211,11 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 }
 
 func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
+	_, err := DecodeScreenToPath(cfg)
+	return err
+}
+
+func DecodeScreenToPath(cfg ScreenDecodeConfig) (*WriteSourceResult, error) {
 	if cfg.FPS <= 0 {
 		cfg.FPS = 30
 	}
@@ -212,11 +223,11 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 		cfg.Timeout = 5 * time.Minute
 	}
 	if err := validateGridScale(cfg.GridSize, cfg.Scale); err != nil {
-		return err
+		return nil, err
 	}
 	backend, err := normalizeBackend(cfg.Backend)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	colorBits := normalizeColorBits(cfg.ColorBits)
 	packetsPerFrame := normalizePacketsPerFrame(cfg.PacketsPerFrame)
@@ -226,7 +237,7 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 	}
 	spec, err := ParseTileSpec(cfg.Tile, shapeBits)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var frameCapacity int
@@ -237,12 +248,12 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 	if backend == BackendQR {
 		qr, err := newQRFrameCodec(cfg.GridSize, cfg.Scale)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		frameCapacity = qr.capacity
 		payloadCapacity, err = PayloadCapacityBytesWithECCAndFrameCapacityAndPackets(frameCapacity, cfg.ECCPercent, packetsPerFrame)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		imageSize = qr.size
 		cellSize = cfg.Scale
@@ -251,24 +262,24 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 		frameCapacity = GridCapacityBytesWithSpec(cfg.GridSize, spec, colorBits)
 		payloadCapacity, err = PayloadCapacityBytesWithECCAndFrameCapacityAndPackets(frameCapacity, cfg.ECCPercent, packetsPerFrame)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		cellSize = CellSizeForSpec(cfg.Scale, spec)
 		imageSize = cfg.GridSize * cellSize
 		symRec, err := LoadSymbols(cfg.SymbolDir, spec)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		colorRec, err := colorRecognizerForBits(colorBits)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		decodeWorkers := normalizeDecodeWorkers(cfg.DecodeWorkers)
 		decoders = make([]frameDecoder, decodeWorkers)
 		for i := 0; i < decodeWorkers; i++ {
 			dec, err := codec.NewDecoderWithColorBits(symRec, colorRec, cellSize, cfg.GridSize, colorBits)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			decoders[i] = dec
 		}
@@ -278,11 +289,11 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 		blockSize = payloadCapacity
 	}
 	if blockSize <= 0 || blockSize > payloadCapacity {
-		return fmt.Errorf("block size %d exceeds frame payload capacity %d", blockSize, payloadCapacity)
+		return nil, fmt.Errorf("block size %d exceeds frame payload capacity %d", blockSize, payloadCapacity)
 	}
 	packetCodec, err := NewFramePacketCodecWithFrameCapacityAndPackets(frameCapacity, cfg.ECCPercent, blockSize, packetsPerFrame)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var fountainDec *fountain.Decoder
 	blockCount := 0
@@ -290,11 +301,11 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 
 	rect, err := ResolveDecoderRegion(cfg.Region, imageSize, imageSize)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	capturer, err := newScreenCapturer(rect)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer capturer.Close()
 
@@ -335,9 +346,9 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 		case err := <-captureErr:
 			timeout.Stop()
 			if errors.Is(err, ErrScreenCapture) {
-				return fmt.Errorf("capture screen: %w", err)
+				return nil, fmt.Errorf("capture screen: %w", err)
 			}
-			return err
+			return nil, err
 		case <-timeout.C:
 			continue
 		}
@@ -376,7 +387,7 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 				blockCount = blockCountForFile(fileSize, blockSize)
 				fountainDec, err = fountain.NewDecoder(fileSize, blockSize, blockCount)
 				if err != nil {
-					return err
+					return nil, err
 				}
 				progress.noteStarted(fileSize, blockCount)
 			} else if frame.FileSize != fileSize {
@@ -390,19 +401,20 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 			seenFrameIDs[frame.FrameID] = struct{}{}
 			added, err := fountainDec.AddFrame(frame.FrameID, frame.Payload)
 			if err != nil {
-				return fmt.Errorf("add captured frame: %w", err)
+				return nil, fmt.Errorf("add captured frame: %w", err)
 			}
 			progress.noteValid(fountainDec.Rank(), added, false)
 			if fountainDec.Complete() {
 				progress.noteComplete()
 				result, err := fountainDec.Decode()
 				if err != nil {
-					return err
+					return nil, err
 				}
-				if _, err := WriteSourceDataToFile(result, cfg.OutputPath); err != nil {
-					return fmt.Errorf("write decoded source: %w", err)
+				writeResult, err := WriteSourceDataToPath(result, cfg.OutputPath)
+				if err != nil {
+					return nil, fmt.Errorf("write decoded source: %w", err)
 				}
-				return nil
+				return writeResult, nil
 			}
 		}
 	}
@@ -411,7 +423,7 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 	if fountainDec != nil {
 		rank = fountainDec.Rank()
 	}
-	return fmt.Errorf("timeout waiting for enough frames: rank %d of %d", rank, blockCount)
+	return nil, fmt.Errorf("timeout waiting for enough frames: rank %d of %d", rank, blockCount)
 }
 
 func runScreenCaptureLoop(capturer *screenCapturer, interval time.Duration, progress *screenDecoderProgress, frames chan *capturedScreenFrame, freeBuffers chan []byte, captureErr chan<- error, stop <-chan struct{}, done chan<- struct{}) {

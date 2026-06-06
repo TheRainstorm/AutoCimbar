@@ -56,21 +56,23 @@ Screen transfer:
 
 ```bash
 ./bin/encoder -i input.bin -RQ 120 -r 0
-./bin/decoder -o output.bin -RQ 120 -r 1
+./bin/decoder -RQ 120 -r 1
 ```
 
 Offline PNG verification:
 
 ```bash
 ./bin/encoder -png -i input.bin -o frames -RQ 80
-./bin/decoder -png -i frames -o output.bin -RQ 80
+./bin/decoder -png -i frames -RQ 80
 ```
+
+The encoder sends the original file name as one-time source metadata. The decoder defaults to the current directory and saves using the sender file name. If `-o` points to a directory, the received file is saved in that directory with the sender file name. If `-o` points to a concrete file path, that path is used exactly.
 
 ## Common Options
 
 ```text
 -i              input file; in decoder PNG mode, input frame directory
--o              output path; in encoder PNG mode, output frame directory
+-o              output path; in encoder PNG mode, output frame directory; decoder defaults to current directory and uses the sender file name for directory output
 -Q              grid/cell count; QR backend maps it to a QR version
 -RQ             reference Q for 8x8 tiles; smaller tiles auto-scale actual Q
 -B              cell scale

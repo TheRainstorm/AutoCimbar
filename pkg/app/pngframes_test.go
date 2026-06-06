@@ -43,6 +43,41 @@ func TestPNGFrameFountainRoundTrip(t *testing.T) {
 	}
 }
 
+func TestPNGFrameDecodeDirectoryUsesTransferFileName(t *testing.T) {
+	dir := t.TempDir()
+	inputPath := filepath.Join(dir, "named-input.bin")
+	outputDir := filepath.Join(dir, "decoded")
+	frameDir := filepath.Join(dir, "frames")
+
+	input := deterministicBytes(4096)
+	if err := os.WriteFile(inputPath, input, 0644); err != nil {
+		t.Fatalf("write input: %v", err)
+	}
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		t.Fatalf("create output dir: %v", err)
+	}
+
+	if _, err := EncodeFileToPNGFrames(inputPath, frameDir, 50, 1, testSymbolDir(t), 10, 0, 0); err != nil {
+		t.Fatalf("EncodeFileToPNGFrames failed: %v", err)
+	}
+
+	result, err := DecodePNGFramesToPathWithBackend(frameDir, outputDir, 50, 1, testSymbolDir(t), 0, 0, 2, symbol.DefaultSpec(), BackendSymbols)
+	if err != nil {
+		t.Fatalf("DecodePNGFramesToPathWithBackend failed: %v", err)
+	}
+	wantPath := filepath.Join(outputDir, "named-input.bin")
+	if result.OutputPath != wantPath {
+		t.Fatalf("OutputPath = %q, want %q", result.OutputPath, wantPath)
+	}
+	output, err := os.ReadFile(wantPath)
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	if !bytes.Equal(output, input) {
+		t.Fatal("decoded output differs from input")
+	}
+}
+
 func TestPNGFrameFountainRecoversDroppedFrames(t *testing.T) {
 	dir := t.TempDir()
 	inputPath := filepath.Join(dir, "input.bin")

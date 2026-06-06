@@ -120,8 +120,8 @@ func main() {
 			fmt.Fprintf(os.Stderr, "screen encoder failed: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Printf("screen encoded %d bytes, source_payload=%d bytes, compression=%s, transfer=%d bytes, %d source block(s), block=%d bytes, md5=%s, backend=%s\n",
-			result.FileSize, result.CompressedSize, app.SourceCompressionName(result.Compression), result.TransferSize, result.BlockCount, result.BlockSize, result.MD5, result.Backend)
+		fmt.Printf("screen encoded %s (%d bytes), source_payload=%d bytes, compression=%s, transfer=%d bytes, %d source block(s), block=%d bytes, md5=%s, backend=%s\n",
+			result.FileName, result.FileSize, result.CompressedSize, app.SourceCompressionName(result.Compression), result.TransferSize, result.BlockCount, result.BlockSize, result.MD5, result.Backend)
 		fmt.Printf("tile=%dx%d shape_bits=%d color_bits=%d cell_bits=%d\n",
 			result.TileWidth, result.TileHeight, result.ShapeBits, result.ColorBits, result.ShapeBits+result.ColorBits)
 		return
@@ -143,8 +143,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("encoded %d bytes into %d frame(s), source_payload=%d bytes, compression=%s, transfer=%d bytes, %d source block(s), md5=%s, backend=%s\n",
-		result.FileSize, len(result.FramePaths), result.CompressedSize, app.SourceCompressionName(result.Compression), result.TransferSize, result.BlockCount, result.MD5, result.Backend)
+	fmt.Printf("encoded %s (%d bytes) into %d frame(s), source_payload=%d bytes, compression=%s, transfer=%d bytes, %d source block(s), md5=%s, backend=%s\n",
+		result.FileName, result.FileSize, len(result.FramePaths), result.CompressedSize, app.SourceCompressionName(result.Compression), result.TransferSize, result.BlockCount, result.MD5, result.Backend)
 	fmt.Printf("Q=%d B=%d tile=%dx%d shape_bits=%d color_bits=%d cell_bits=%d cell=%dpx image=%dx%dpx payload=%d bytes/frame block=%d bytes ecc=%d%% parity=%d bytes packet=%d bytes\n",
 		result.GridSize, result.Scale, result.TileWidth, result.TileHeight, result.ShapeBits, result.ColorBits, result.ShapeBits+result.ColorBits, result.CellSize, result.ImageSize, result.ImageSize, result.PayloadCapacity, result.BlockSize, result.ECCPercent, result.ECCBytes, result.PacketBytes)
 	fmt.Printf("output: %s\n", *outputDir)

@@ -68,12 +68,15 @@ func TestBuildPacketIntoRoundTrip(t *testing.T) {
 
 func TestBuildParseSourceDataRoundTrip(t *testing.T) {
 	input := []byte("source payload")
-	source, err := ParseSourceData(BuildSourceData(input))
+	source, err := ParseSourceData(BuildSourceDataWithCompressionAndName(input, "payload.bin", true))
 	if err != nil {
 		t.Fatalf("ParseSourceData failed: %v", err)
 	}
 	if source.FileSize != len(input) {
 		t.Fatalf("FileSize = %d, want %d", source.FileSize, len(input))
+	}
+	if source.FileName != "payload.bin" {
+		t.Fatalf("FileName = %q, want payload.bin", source.FileName)
 	}
 	if source.MD5 != BytesMD5Hex(input) {
 		t.Fatalf("MD5 = %s, want %s", source.MD5, BytesMD5Hex(input))
@@ -149,6 +152,29 @@ func TestWriteSourceDataToFileRoundTripWithoutCompression(t *testing.T) {
 		t.Fatalf("MD5 = %s, want %s", source.MD5, BytesMD5Hex(input))
 	}
 	output, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	if !bytes.Equal(output, input) {
+		t.Fatal("output differs from input")
+	}
+}
+
+func TestWriteSourceDataToDirectoryUsesTransferFileName(t *testing.T) {
+	input := []byte("named payload")
+	outputDir := t.TempDir()
+
+	result, err := WriteSourceDataToPath(BuildSourceDataWithCompressionAndName(input, "../unsafe:name.bin", false), outputDir)
+	if err != nil {
+		t.Fatalf("WriteSourceDataToPath failed: %v", err)
+	}
+	if filepath.Base(result.OutputPath) != "unsafename.bin" {
+		t.Fatalf("output file = %q, want basename unsafename.bin", result.OutputPath)
+	}
+	if result.Source.FileName != "unsafename.bin" {
+		t.Fatalf("source file name = %q", result.Source.FileName)
+	}
+	output, err := os.ReadFile(result.OutputPath)
 	if err != nil {
 		t.Fatalf("read output: %v", err)
 	}

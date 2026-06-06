@@ -14,7 +14,9 @@ const (
 	FrameMagic            = uint32(0x41434231) // "ACB1"
 	FrameHeaderSize       = 20
 	SourceMagic           = uint32(0x41435331) // "ACS1"
+	SourceMagicV2         = uint32(0x41435332) // "ACS2"
 	SourceHeaderSize      = 32
+	SourceHeaderV2Size    = 36
 	SourceCompressionNone = uint32(0)
 	SourceCompressionZstd = uint32(1)
 )

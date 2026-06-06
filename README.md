@@ -56,15 +56,17 @@ GOOS=windows GOARCH=amd64 go build -o bin/decoder.exe ./cmd/decoder
 
 ```bash
 ./bin/encoder -i input.bin -RQ 120 -r 0
-./bin/decoder -o output.bin -RQ 120 -r 1
+./bin/decoder -RQ 120 -r 1
 ```
 
 PNG 离线验证：
 
 ```bash
 ./bin/encoder -png -i input.bin -o frames -RQ 80
-./bin/decoder -png -i frames -o output.bin -RQ 80
+./bin/decoder -png -i frames -RQ 80
 ```
+
+encoder 会把原始文件名作为一次性源数据元信息发送。decoder 默认输出到当前目录，并使用发送端文件名保存；如果 `-o` 指向一个目录，也会在该目录下使用发送端文件名。只有当 `-o` 指向具体文件路径时，才会强制使用该路径。
 
 ## 关键参数
 
@@ -72,7 +74,7 @@ PNG 离线验证：
 
 ```text
 -i              输入文件；decoder PNG 模式下为帧目录
--o              输出路径；encoder PNG 模式下为帧目录
+-o              输出路径；encoder PNG 模式下为帧目录；decoder 默认当前目录，目录输出时使用发送端文件名
 -Q              grid/cell 数；QR backend 下映射为 QR version
 -RQ             以 8x8 tile 为基准的参考 Q，tile 变小时自动增大实际 Q
 -B              cell 缩放倍数

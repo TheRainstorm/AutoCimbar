@@ -27,6 +27,7 @@ type EncodeResult struct {
 	ECCBytes        int
 	PacketBytes     int
 	FileSize        int
+	FileName        string
 	CompressedSize  int
 	TransferSize    int
 	BlockSize       int
@@ -93,6 +94,10 @@ func EncodeFileToPNGFramesWithBackend(inputPath string, outputDir string, gridSi
 	}
 
 	sourceData, fileSize, md5Hex, err := BuildSourceDataFromFileWithCompression(inputPath, compress)
+	if err != nil {
+		return nil, err
+	}
+	sourcePayloadSize, err := SourcePayloadSize(sourceData)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +177,8 @@ func EncodeFileToPNGFramesWithBackend(inputPath string, outputDir string, gridSi
 		ECCBytes:        packetCodec.ParitySize(),
 		PacketBytes:     packetCodec.EncodedSize(),
 		FileSize:        fileSize,
-		CompressedSize:  len(sourceData) - SourceHeaderSize,
+		FileName:        filepath.Base(inputPath),
+		CompressedSize:  sourcePayloadSize,
 		TransferSize:    len(sourceData),
 		BlockSize:       fountainEnc.BlockSize(),
 		BlockCount:      fountainEnc.BlockCount(),
@@ -199,59 +205,64 @@ func DecodePNGFramesToFileWithSpec(inputPath string, outputPath string, gridSize
 }
 
 func DecodePNGFramesToFileWithBackend(inputPath string, outputPath string, gridSize int, scale int, symbolDir string, blockSize int, eccPercent int, colorBits int, spec symbol.Spec, backend string) error {
+	_, err := DecodePNGFramesToPathWithBackend(inputPath, outputPath, gridSize, scale, symbolDir, blockSize, eccPercent, colorBits, spec, backend)
+	return err
+}
+
+func DecodePNGFramesToPathWithBackend(inputPath string, outputPath string, gridSize int, scale int, symbolDir string, blockSize int, eccPercent int, colorBits int, spec symbol.Spec, backend string) (*WriteSourceResult, error) {
 	backend, err := normalizeBackend(backend)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if backend == BackendQR {
-		return decodePNGFramesToFileQR(inputPath, outputPath, gridSize, scale, blockSize, eccPercent)
+		return decodePNGFramesToPathQR(inputPath, outputPath, gridSize, scale, blockSize, eccPercent)
 	}
 	colorBits = normalizeColorBits(colorBits)
 	if err := spec.Validate(); err != nil {
-		return err
+		return nil, err
 	}
 	if gridSize <= 0 {
-		return fmt.Errorf("Q must be > 0")
+		return nil, fmt.Errorf("Q must be > 0")
 	}
 	if scale <= 0 {
-		return fmt.Errorf("B must be > 0")
+		return nil, fmt.Errorf("B must be > 0")
 	}
 
 	paths, err := collectPNGPaths(inputPath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(paths) == 0 {
-		return fmt.Errorf("no PNG frames found in %s", inputPath)
+		return nil, fmt.Errorf("no PNG frames found in %s", inputPath)
 	}
 	payloadCapacity, err := PayloadCapacityBytesWithECCAndSpecAndPackets(gridSize, eccPercent, spec, colorBits, 1)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if blockSize == 0 {
 		blockSize = payloadCapacity
 	}
 	if blockSize <= 0 {
-		return fmt.Errorf("block size must be > 0")
+		return nil, fmt.Errorf("block size must be > 0")
 	}
 	if blockSize > payloadCapacity {
-		return fmt.Errorf("block size %d exceeds frame payload capacity %d", blockSize, payloadCapacity)
+		return nil, fmt.Errorf("block size %d exceeds frame payload capacity %d", blockSize, payloadCapacity)
 	}
 	packetCodec, err := NewFramePacketCodecWithSpecAndPackets(gridSize, eccPercent, blockSize, spec, colorBits, 1)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	symRec, err := LoadSymbols(symbolDir, spec)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	colorRec, err := colorRecognizerForBits(colorBits)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	codecDec, err := codec.NewDecoderWithColorBits(symRec, colorRec, CellSizeForSpec(scale, spec), gridSize, colorBits)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var fountainDec *fountain.Decoder
 	blockCount := 0
@@ -260,7 +271,7 @@ func DecodePNGFramesToFileWithBackend(inputPath string, outputPath string, gridS
 	for _, path := range paths {
 		frame, packet, err := decodeFrameFile(codecDec, packetCodec, path, blockSize, packetBuf)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		packetBuf = packet
 		if fountainDec == nil {
@@ -268,13 +279,13 @@ func DecodePNGFramesToFileWithBackend(inputPath string, outputPath string, gridS
 			blockCount = blockCountForFile(fileSize, blockSize)
 			fountainDec, err = fountain.NewDecoder(fileSize, blockSize, blockCount)
 			if err != nil {
-				return err
+				return nil, err
 			}
 		} else if frame.FileSize != fileSize {
-			return fmt.Errorf("frame %s belongs to a different file size: got %d, want %d", path, frame.FileSize, fileSize)
+			return nil, fmt.Errorf("frame %s belongs to a different file size: got %d, want %d", path, frame.FileSize, fileSize)
 		}
 		if _, err := fountainDec.AddFrame(frame.FrameID, frame.Payload); err != nil {
-			return fmt.Errorf("add frame %s: %w", path, err)
+			return nil, fmt.Errorf("add frame %s: %w", path, err)
 		}
 		if fountainDec.Complete() {
 			break
@@ -282,20 +293,21 @@ func DecodePNGFramesToFileWithBackend(inputPath string, outputPath string, gridS
 	}
 
 	if fountainDec == nil {
-		return fmt.Errorf("no decodable frames found")
+		return nil, fmt.Errorf("no decodable frames found")
 	}
 	if !fountainDec.Complete() {
-		return fmt.Errorf("not enough independent frames: rank %d of %d", fountainDec.Rank(), blockCount)
+		return nil, fmt.Errorf("not enough independent frames: rank %d of %d", fountainDec.Rank(), blockCount)
 	}
 
 	result, err := fountainDec.Decode()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if _, err := WriteSourceDataToFile(result, outputPath); err != nil {
-		return fmt.Errorf("write decoded source: %w", err)
+	writeResult, err := WriteSourceDataToPath(result, outputPath)
+	if err != nil {
+		return nil, fmt.Errorf("write decoded source: %w", err)
 	}
-	return nil
+	return writeResult, nil
 }
 
 func decodeFrameFile(dec *codec.Decoder, packetCodec interface {
@@ -402,6 +414,10 @@ func encodeFileToPNGFramesQR(inputPath string, outputDir string, gridSize int, s
 	if err != nil {
 		return nil, err
 	}
+	sourcePayloadSize, err := SourcePayloadSize(sourceData)
+	if err != nil {
+		return nil, err
+	}
 	fountainEnc, err := fountain.NewEncoder(sourceData, blockSize)
 	if err != nil {
 		return nil, err
@@ -460,7 +476,8 @@ func encodeFileToPNGFramesQR(inputPath string, outputDir string, gridSize int, s
 		ECCBytes:        packetCodec.ParitySize(),
 		PacketBytes:     packetCodec.EncodedSize(),
 		FileSize:        fileSize,
-		CompressedSize:  len(sourceData) - SourceHeaderSize,
+		FileName:        filepath.Base(inputPath),
+		CompressedSize:  sourcePayloadSize,
 		TransferSize:    len(sourceData),
 		BlockSize:       fountainEnc.BlockSize(),
 		BlockCount:      fountainEnc.BlockCount(),
@@ -475,33 +492,38 @@ func encodeFileToPNGFramesQR(inputPath string, outputDir string, gridSize int, s
 }
 
 func decodePNGFramesToFileQR(inputPath string, outputPath string, gridSize int, scale int, blockSize int, eccPercent int) error {
+	_, err := decodePNGFramesToPathQR(inputPath, outputPath, gridSize, scale, blockSize, eccPercent)
+	return err
+}
+
+func decodePNGFramesToPathQR(inputPath string, outputPath string, gridSize int, scale int, blockSize int, eccPercent int) (*WriteSourceResult, error) {
 	qr, err := newQRFrameCodec(gridSize, scale)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	paths, err := collectPNGPaths(inputPath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(paths) == 0 {
-		return fmt.Errorf("no PNG frames found in %s", inputPath)
+		return nil, fmt.Errorf("no PNG frames found in %s", inputPath)
 	}
 	payloadCapacity, err := PayloadCapacityBytesWithECCAndFrameCapacityAndPackets(qr.capacity, eccPercent, 1)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if blockSize == 0 {
 		blockSize = payloadCapacity
 	}
 	if blockSize <= 0 {
-		return fmt.Errorf("block size must be > 0")
+		return nil, fmt.Errorf("block size must be > 0")
 	}
 	if blockSize > payloadCapacity {
-		return fmt.Errorf("block size %d exceeds frame payload capacity %d", blockSize, payloadCapacity)
+		return nil, fmt.Errorf("block size %d exceeds frame payload capacity %d", blockSize, payloadCapacity)
 	}
 	packetCodec, err := NewFramePacketCodecWithFrameCapacityAndPackets(qr.capacity, eccPercent, blockSize, 1)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var fountainDec *fountain.Decoder
 	blockCount := 0
@@ -510,58 +532,59 @@ func decodePNGFramesToFileQR(inputPath string, outputPath string, gridSize int, 
 	for _, path := range paths {
 		f, err := os.Open(path)
 		if err != nil {
-			return fmt.Errorf("open frame %s: %w", path, err)
+			return nil, fmt.Errorf("open frame %s: %w", path, err)
 		}
 		img, err := png.Decode(f)
 		closeErr := f.Close()
 		if err != nil {
-			return fmt.Errorf("decode png %s: %w", path, err)
+			return nil, fmt.Errorf("decode png %s: %w", path, err)
 		}
 		if closeErr != nil {
-			return fmt.Errorf("close frame %s: %w", path, closeErr)
+			return nil, fmt.Errorf("close frame %s: %w", path, closeErr)
 		}
 		encodedPacket, err := qr.DecodeInto(img, nil)
 		if err != nil {
-			return fmt.Errorf("decode QR frame %s: %w", path, err)
+			return nil, fmt.Errorf("decode QR frame %s: %w", path, err)
 		}
 		packet, err := packetCodec.DecodeInto(encodedPacket, packetBuf)
 		if err != nil {
-			return fmt.Errorf("ecc decode frame %s: %w", path, err)
+			return nil, fmt.Errorf("ecc decode frame %s: %w", path, err)
 		}
 		packetBuf = packet
 		frame, err := ParsePacket(packet, blockSize)
 		if err != nil {
-			return fmt.Errorf("parse frame %s: %w", path, err)
+			return nil, fmt.Errorf("parse frame %s: %w", path, err)
 		}
 		if fountainDec == nil {
 			fileSize = frame.FileSize
 			blockCount = blockCountForFile(fileSize, blockSize)
 			fountainDec, err = fountain.NewDecoder(fileSize, blockSize, blockCount)
 			if err != nil {
-				return err
+				return nil, err
 			}
 		} else if frame.FileSize != fileSize {
-			return fmt.Errorf("frame %s belongs to a different file size: got %d, want %d", path, frame.FileSize, fileSize)
+			return nil, fmt.Errorf("frame %s belongs to a different file size: got %d, want %d", path, frame.FileSize, fileSize)
 		}
 		if _, err := fountainDec.AddFrame(frame.FrameID, frame.Payload); err != nil {
-			return fmt.Errorf("add frame %s: %w", path, err)
+			return nil, fmt.Errorf("add frame %s: %w", path, err)
 		}
 		if fountainDec.Complete() {
 			break
 		}
 	}
 	if fountainDec == nil {
-		return fmt.Errorf("no decodable frames found")
+		return nil, fmt.Errorf("no decodable frames found")
 	}
 	if !fountainDec.Complete() {
-		return fmt.Errorf("not enough independent frames: rank %d of %d", fountainDec.Rank(), blockCount)
+		return nil, fmt.Errorf("not enough independent frames: rank %d of %d", fountainDec.Rank(), blockCount)
 	}
 	result, err := fountainDec.Decode()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if _, err := WriteSourceDataToFile(result, outputPath); err != nil {
-		return fmt.Errorf("write decoded source: %w", err)
+	writeResult, err := WriteSourceDataToPath(result, outputPath)
+	if err != nil {
+		return nil, fmt.Errorf("write decoded source: %w", err)
 	}
-	return nil
+	return writeResult, nil
 }
