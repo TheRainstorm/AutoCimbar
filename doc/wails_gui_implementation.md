@@ -53,7 +53,7 @@ Add a Wails v3 desktop GUI for AutoCimBar while preserving the existing high-per
   - Dark glassmorphism dashboard.
   - Sender and Receiver panels run side by side.
   - Main UI only exposes `RQ` and screen selection.
-  - Advanced settings accordion exposes `cell`, `ecc`, `packets`, `B`, `X:Y`, `fps`, backend, symbols, block size, zstd, decode workers, and timeout.
+  - Advanced settings accordion exposes `cell`, `ecc`, `packets`, `B`, `X:Y`, `fps`, backend, symbols, zstd, and decode workers.
   - GUI defaults are loaded from `~/.autocimbar` using `[default]` plus `[gui]`; old `Q` values are accepted as `RQ` when `RQ` is absent.
 - `src/runtime/api.ts`
   - Typed wrapper for Wails services and events.
@@ -106,4 +106,4 @@ All checks passed on 2026-06-06. The generated Windows binary is `bin/gui.exe`.
 - Replace progress-log parsing with a structured progress callback from `pkg/app`.
 - Generated Wails bindings can be added later, but the current `Call.ByName` path is explicit and works without generated files.
 - Add Playwright screenshot verification once the Wails dev runner is available in CI/local workflow.
-- Pause/resume currently restarts the sender/receiver task with the same session config. A future receiver pause could preserve in-memory fountain state by separating capture control from decode state.
+- Receiver pause/resume preserves the in-memory fountain decoder state by pausing capture/decode instead of stopping the task.

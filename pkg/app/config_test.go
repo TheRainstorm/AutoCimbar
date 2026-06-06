@@ -78,3 +78,26 @@ packets = 8
 		t.Fatalf("packets=%d p=%d, want short command-line override before alias merge", *packets, *pShort)
 	}
 }
+
+func TestApplyINIConfigIgnoresRetiredKeys(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	path := filepath.Join(home, DefaultConfigPath)
+	if err := os.WriteFile(path, []byte(`
+Q = 80
+block-size = 1024
+timeout = 5m
+`), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	q := fs.Int("Q", 120, "")
+	if err := ApplyINIConfig(fs, "decoder", nil); err != nil {
+		t.Fatalf("ApplyINIConfig: %v", err)
+	}
+	if *q != 80 {
+		t.Fatalf("Q = %d, want config value 80", *q)
+	}
+}

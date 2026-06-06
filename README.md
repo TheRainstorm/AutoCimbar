@@ -165,7 +165,6 @@ r = 0
 
 [decoder]
 r = 1
-timeout = 5m
 ```
 
 配置 key 使用命令行参数名即可，例如 `RQ`、`cell`、`packets`、`color-bits`；下划线会按短横线处理。

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	coreapp "github.com/autocambar/autocambar/pkg/app"
 )
@@ -65,14 +64,8 @@ func ValidateConfig(cfg TransferConfig) error {
 	if cfg.Packets <= 0 {
 		return fmt.Errorf("packets must be > 0")
 	}
-	if cfg.BlockSize < 0 {
-		return fmt.Errorf("block-size must be >= 0")
-	}
 	if cfg.DecodeWorkers < 0 {
 		return fmt.Errorf("decode-workers must be >= 0")
-	}
-	if cfg.TimeoutSeconds < 0 {
-		return fmt.Errorf("timeout must be >= 0")
 	}
 	if _, err := normalizeBackend(cfg.Backend); err != nil {
 		return err
@@ -196,24 +189,20 @@ func normalizeConfigForDefaults(cfg TransferConfig) TransferConfig {
 	if cfg.Backend == "" {
 		cfg.Backend = def.Backend
 	}
-	if cfg.TimeoutSeconds == 0 {
-		cfg.TimeoutSeconds = def.TimeoutSeconds
-	}
 	return cfg
 }
 
 func applyConfigValues(cfg *TransferConfig, values map[string]string) {
 	aliases := map[string]string{
-		"c":         "cell",
-		"p":         "packets",
-		"r":         "R",
-		"f":         "fps",
-		"s":         "symbols",
-		"b":         "B",
-		"rq":        "RQ",
-		"q":         "Q",
-		"no_zstd":   "no-zstd",
-		"blocksize": "block-size",
+		"c":       "cell",
+		"p":       "packets",
+		"r":       "R",
+		"f":       "fps",
+		"s":       "symbols",
+		"b":       "B",
+		"rq":      "RQ",
+		"q":       "Q",
+		"no_zstd": "no-zstd",
 	}
 	hasRQ := false
 	for rawKey := range values {
@@ -267,20 +256,10 @@ func applyConfigValues(cfg *TransferConfig, values map[string]string) {
 			cfg.Backend = value
 		case "symbols":
 			cfg.SymbolDir = value
-		case "block-size":
-			setInt(&cfg.BlockSize, value)
 		case "no-zstd":
 			setBool(&cfg.NoZstd, value)
 		case "decode-workers":
 			setInt(&cfg.DecodeWorkers, value)
-		case "timeout":
-			if d, err := time.ParseDuration(value); err == nil {
-				cfg.TimeoutSeconds = int(d.Seconds())
-			} else {
-				setInt(&cfg.TimeoutSeconds, value)
-			}
-		case "timeout-seconds":
-			setInt(&cfg.TimeoutSeconds, value)
 		}
 	}
 }

@@ -13,10 +13,8 @@ export interface TransferConfig {
   output: string
   backend: string
   symbols: string
-  blockSize: number
   noZstd: boolean
   decodeWorkers: number
-  timeoutSeconds: number
 }
 
 export interface SelectedFile {
@@ -136,10 +134,8 @@ export const defaultConfig: TransferConfig = {
   output: '.',
   backend: 'symbols',
   symbols: '',
-  blockSize: 0,
   noZstd: false,
   decodeWorkers: 0,
-  timeoutSeconds: 300,
 }
 
 export const AppService = {

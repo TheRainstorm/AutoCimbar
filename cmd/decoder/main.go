@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/autocambar/autocambar/pkg/app"
 )
@@ -15,7 +14,6 @@ func main() {
 	q := flag.Int("Q", 120, "grid size in cells")
 	rq := flag.Int("RQ", 0, "reference grid size for 8x8 tiles; when set, actual Q is scaled by 8/tile_width")
 	b := flag.Int("B", 1, "screen scale factor")
-	blockSize := flag.Int("block-size", 0, "fountain block size in bytes, 0 uses max frame payload")
 	eccPercent := flag.Int("ecc", 3, "per-frame Reed-Solomon ECC percentage; encoder must use the same value")
 	backend := flag.String("backend", app.BackendSymbols, "frame backend: symbols or qr")
 	colorBits := flag.Int("color-bits", 2, "color bits per cell: 0..8 uses 1..256 colors; encoder must use the same value")
@@ -32,7 +30,6 @@ func main() {
 	fps := flag.Int("fps", 120, "screen capture rate")
 	fpsShort := flag.Int("f", 0, "short alias for -fps")
 	decodeWorkers := flag.Int("decode-workers", 0, "parallel screen decode workers, 0 chooses automatically")
-	timeout := flag.Duration("timeout", 5*time.Minute, "screen decode timeout")
 	listDisplays := flag.Bool("list-displays", false, "list detected display indexes and bounds")
 	symbolDir := flag.String("symbols", app.DefaultSymbolDir, "optional directory containing symbol PNG files named 00.png..; empty uses built-in symbols")
 	symbolDirShort := flag.String("s", "", "short alias for -symbols")
@@ -91,7 +88,6 @@ func main() {
 			GridSize:        gridSize,
 			Scale:           *b,
 			SymbolDir:       *symbolDir,
-			BlockSize:       *blockSize,
 			ECCPercent:      *eccPercent,
 			ColorBits:       *colorBits,
 			ShapeBits:       *shapeBits,
@@ -100,7 +96,6 @@ func main() {
 			Region:          *region,
 			FPS:             *fps,
 			DecodeWorkers:   *decodeWorkers,
-			Timeout:         *timeout,
 			Progress:        os.Stderr,
 		})
 		if err != nil {
@@ -126,7 +121,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "invalid grid size: %v\n", err)
 		os.Exit(1)
 	}
-	writeResult, err := app.DecodePNGFramesToPathWithBackend(*input, *output, gridSize, *b, *symbolDir, *blockSize, *eccPercent, *colorBits, spec, *backend)
+	writeResult, err := app.DecodePNGFramesToPathWithBackend(*input, *output, gridSize, *b, *symbolDir, 0, *eccPercent, *colorBits, spec, *backend)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "decoder failed: %v\n", err)
 		os.Exit(1)

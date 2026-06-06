@@ -163,7 +163,6 @@ r = 0
 
 [decoder]
 r = 1
-timeout = 5m
 ```
 
 Config keys use command-line option names such as `RQ`, `cell`, `packets`, and `color-bits`; underscores are treated as dashes.

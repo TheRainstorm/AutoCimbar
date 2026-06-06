@@ -44,6 +44,9 @@ func ApplyINIConfig(fs *flag.FlagSet, command string, aliases map[string][]strin
 			name, ok = flagNames[strings.ToLower(key)]
 		}
 		if !ok {
+			if isIgnoredConfigKey(key) {
+				continue
+			}
 			return fmt.Errorf("unknown config key %q", key)
 		}
 		if visited[name] {
@@ -64,6 +67,15 @@ func ApplyINIConfig(fs *flag.FlagSet, command string, aliases map[string][]strin
 		}
 	}
 	return nil
+}
+
+func isIgnoredConfigKey(key string) bool {
+	switch strings.ToLower(normalizeConfigKey(key)) {
+	case "block-size", "timeout":
+		return true
+	default:
+		return false
+	}
 }
 
 func LoadINIConfig(command string) (map[string]string, error) {

@@ -110,8 +110,13 @@ async function startReceiver() {
   if (!receiver.value || receiverState.value === 'done' || receiverState.value === 'stopped') {
     receiver.value = await DecoderService.prepareReceive({ ...config })
   }
+  const wasPaused = receiverState.value === 'paused'
   receiverState.value = 'running'
-  await DecoderService.startReceive(receiver.value.id)
+  if (wasPaused) {
+    await DecoderService.resumeReceive(receiver.value.id)
+  } else {
+    await DecoderService.startReceive(receiver.value.id)
+  }
 }
 
 async function pauseReceiver() {
@@ -158,7 +163,7 @@ onMounted(() => {
 
 <template>
   <main class="h-screen overflow-auto bg-gray-950 text-gray-100">
-    <div class="mx-auto flex min-h-full max-w-6xl flex-col gap-3 px-4 py-3">
+    <div class="flex min-h-full w-full flex-col gap-3 px-4 py-3">
       <section class="rounded-xl border border-white/10 bg-gray-900/80 p-3 shadow-lg backdrop-blur-xl">
         <div class="grid gap-3 md:grid-cols-[110px_1fr_auto]">
           <label class="block">
@@ -215,16 +220,8 @@ onMounted(() => {
                 <input v-model="config.symbols" placeholder="built-in" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" />
               </label>
               <label class="block">
-                <span class="text-xs text-gray-400">Block size</span>
-                <input v-model.number="config.blockSize" type="number" min="0" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" />
-              </label>
-              <label class="block">
                 <span class="text-xs text-gray-400">Workers</span>
                 <input v-model.number="config.decodeWorkers" type="number" min="0" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" />
-              </label>
-              <label class="block">
-                <span class="text-xs text-gray-400">Timeout (s)</span>
-                <input v-model.number="config.timeoutSeconds" type="number" min="0" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" />
               </label>
               <label class="flex items-center gap-2 self-end rounded-lg border border-white/10 bg-gray-800 px-3 py-2 text-sm text-gray-100">
                 <input v-model="config.noZstd" type="checkbox" class="h-4 w-4 accent-sky-500" />
@@ -259,8 +256,8 @@ onMounted(() => {
             <button :disabled="!canControlSender" class="rounded-lg bg-rose-500/90 px-3 py-2 text-sm font-medium text-white shadow-lg transition-all hover:scale-105 disabled:cursor-not-allowed disabled:bg-gray-700 disabled:text-gray-500" @click="stopSender">End</button>
           </div>
 
-          <div class="mt-3 h-28 overflow-auto rounded-lg border border-white/10 bg-black/30 p-2 text-xs leading-5 text-gray-300">
-            <div v-for="(line, idx) in senderLogs" :key="idx">{{ line }}</div>
+          <div class="mt-3 h-28 overflow-auto rounded-lg border border-white/10 bg-black/30 p-2 font-mono text-xs leading-5 text-gray-300">
+            <div v-for="(line, idx) in senderLogs" :key="idx" class="whitespace-nowrap">{{ line }}</div>
           </div>
         </div>
 
@@ -321,8 +318,8 @@ onMounted(() => {
             <button :disabled="!canControlReceiver" class="rounded-lg bg-rose-500/90 px-3 py-2 text-sm font-medium text-white shadow-lg transition-all hover:scale-105 disabled:cursor-not-allowed disabled:bg-gray-700 disabled:text-gray-500" @click="stopReceiver">End</button>
           </div>
 
-          <div class="mt-3 h-24 overflow-auto rounded-lg border border-white/10 bg-black/30 p-2 text-xs leading-5 text-gray-300">
-            <div v-for="(line, idx) in receiverLogs" :key="idx">{{ line }}</div>
+          <div class="mt-3 h-24 overflow-auto rounded-lg border border-white/10 bg-black/30 p-2 font-mono text-xs leading-5 text-gray-300">
+            <div v-for="(line, idx) in receiverLogs" :key="idx" class="whitespace-nowrap">{{ line }}</div>
           </div>
         </div>
       </section>

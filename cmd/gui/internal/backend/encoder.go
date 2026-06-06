@@ -119,7 +119,6 @@ func (s *EncoderService) run(task *encoderTask, session SenderSession, stop <-ch
 		GridSize:        gridSize,
 		Scale:           cfg.Scale,
 		SymbolDir:       cfg.SymbolDir,
-		BlockSize:       cfg.BlockSize,
 		ECCPercent:      eccValue(cfg),
 		ColorBits:       colorBits,
 		ShapeBits:       shapeBits,

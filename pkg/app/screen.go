@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/autocambar/autocambar/pkg/codec"
@@ -57,6 +58,7 @@ type ScreenDecodeConfig struct {
 	Timeout         time.Duration
 	Progress        io.Writer
 	Stop            <-chan struct{}
+	Pause           <-chan bool
 }
 
 var ErrStopped = errors.New("operation stopped")
@@ -223,9 +225,6 @@ func DecodeScreenToPath(cfg ScreenDecodeConfig) (*WriteSourceResult, error) {
 	if cfg.FPS <= 0 {
 		cfg.FPS = 30
 	}
-	if cfg.Timeout <= 0 {
-		cfg.Timeout = 5 * time.Minute
-	}
 	if err := validateGridScale(cfg.GridSize, cfg.Scale); err != nil {
 		return nil, err
 	}
@@ -313,13 +312,14 @@ func DecodeScreenToPath(cfg ScreenDecodeConfig) (*WriteSourceResult, error) {
 	}
 	defer capturer.Close()
 
-	deadline := time.Now().Add(cfg.Timeout)
 	interval := time.Second / time.Duration(cfg.FPS)
 	if interval <= 0 {
 		interval = time.Millisecond
 	}
 	progress := newScreenDecoderProgress(cfg.Progress, blockSize)
 	defer progress.finishLine()
+	isPaused, stopPause := newPauseFlag(cfg.Pause)
+	defer stopPause()
 
 	frames := make(chan *capturedScreenFrame, len(decoders))
 	decodedFrames := make(chan decodedScreenFrame, len(decoders))
@@ -327,9 +327,9 @@ func DecodeScreenToPath(cfg ScreenDecodeConfig) (*WriteSourceResult, error) {
 	captureErr := make(chan error, 1)
 	stopCapture := make(chan struct{})
 	captureDone := make(chan struct{})
-	go runScreenCaptureLoop(capturer, interval, progress, frames, freeBuffers, captureErr, stopCapture, captureDone)
+	go runScreenCaptureLoop(capturer, interval, progress, frames, freeBuffers, captureErr, stopCapture, isPaused, captureDone)
 	decodeDone := make(chan struct{})
-	go runScreenDecodeWorkers(decoders, frames, decodedFrames, freeBuffers, progress, stopCapture, decodeDone)
+	go runScreenDecodeWorkers(decoders, frames, decodedFrames, freeBuffers, progress, stopCapture, isPaused, decodeDone)
 	defer func() {
 		close(stopCapture)
 		<-captureDone
@@ -338,33 +338,32 @@ func DecodeScreenToPath(cfg ScreenDecodeConfig) (*WriteSourceResult, error) {
 
 	var packetBuf []byte
 	seenFrameIDs := make(map[uint32]struct{})
-	for time.Now().Before(deadline) {
-		remaining := time.Until(deadline)
-		if remaining <= 0 {
-			break
+	for {
+		if !waitWhilePaused(isPaused, cfg.Stop) {
+			return nil, ErrStopped
 		}
-		timeout := time.NewTimer(remaining)
+		var timeout <-chan time.Time
+		var timer *time.Timer
+		if cfg.Timeout > 0 {
+			timer = time.NewTimer(cfg.Timeout)
+			timeout = timer.C
+		}
 		var decoded decodedScreenFrame
 		select {
 		case decoded = <-decodedFrames:
 		case err := <-captureErr:
-			timeout.Stop()
+			stopTimer(timer)
 			if errors.Is(err, ErrScreenCapture) {
 				return nil, fmt.Errorf("capture screen: %w", err)
 			}
 			return nil, err
 		case <-cfg.Stop:
-			timeout.Stop()
+			stopTimer(timer)
 			return nil, ErrStopped
-		case <-timeout.C:
+		case <-timeout:
 			continue
 		}
-		if !timeout.Stop() {
-			select {
-			case <-timeout.C:
-			default:
-			}
-		}
+		stopTimer(timer)
 
 		if decoded.Err != nil {
 			continue
@@ -430,14 +429,67 @@ func DecodeScreenToPath(cfg ScreenDecodeConfig) (*WriteSourceResult, error) {
 	if fountainDec != nil {
 		rank = fountainDec.Rank()
 	}
-	return nil, fmt.Errorf("timeout waiting for enough frames: rank %d of %d", rank, blockCount)
+	return nil, fmt.Errorf("stopped waiting for enough frames: rank %d of %d", rank, blockCount)
 }
 
-func runScreenCaptureLoop(capturer *screenCapturer, interval time.Duration, progress *screenDecoderProgress, frames chan *capturedScreenFrame, freeBuffers chan []byte, captureErr chan<- error, stop <-chan struct{}, done chan<- struct{}) {
+func newPauseFlag(updates <-chan bool) (func() bool, func()) {
+	var paused atomic.Bool
+	done := make(chan struct{})
+	if updates == nil {
+		return paused.Load, func() {}
+	}
+	stop := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case value, ok := <-updates:
+				if !ok {
+					return
+				}
+				paused.Store(value)
+			case <-stop:
+				return
+			}
+		}
+	}()
+	return paused.Load, func() {
+		close(stop)
+		<-done
+	}
+}
+
+func waitWhilePaused(isPaused func() bool, stop <-chan struct{}) bool {
+	for isPaused() {
+		select {
+		case <-stop:
+			return false
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	return true
+}
+
+func stopTimer(timer *time.Timer) {
+	if timer == nil {
+		return
+	}
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
+}
+
+func runScreenCaptureLoop(capturer *screenCapturer, interval time.Duration, progress *screenDecoderProgress, frames chan *capturedScreenFrame, freeBuffers chan []byte, captureErr chan<- error, stop <-chan struct{}, isPaused func() bool, done chan<- struct{}) {
 	defer close(done)
 	nextCapture := time.Now()
 	var buf []byte
 	for {
+		if !waitWhilePaused(isPaused, stop) {
+			return
+		}
 		if now := time.Now(); now.Before(nextCapture) {
 			select {
 			case <-stop:
@@ -446,6 +498,10 @@ func runScreenCaptureLoop(capturer *screenCapturer, interval time.Duration, prog
 			}
 		} else if now.Sub(nextCapture) > interval {
 			nextCapture = now
+		}
+		if isPaused() {
+			nextCapture = time.Now()
+			continue
 		}
 		nextCapture = nextCapture.Add(interval)
 
@@ -489,7 +545,7 @@ type decodedScreenFrame struct {
 	Err  error
 }
 
-func runScreenDecodeWorkers(decoders []frameDecoder, frames <-chan *capturedScreenFrame, decoded chan<- decodedScreenFrame, freeBuffers chan<- []byte, progress *screenDecoderProgress, stop <-chan struct{}, done chan<- struct{}) {
+func runScreenDecodeWorkers(decoders []frameDecoder, frames <-chan *capturedScreenFrame, decoded chan<- decodedScreenFrame, freeBuffers chan<- []byte, progress *screenDecoderProgress, stop <-chan struct{}, isPaused func() bool, done chan<- struct{}) {
 	var wg sync.WaitGroup
 	wg.Add(len(decoders))
 	for _, dec := range decoders {
@@ -497,12 +553,19 @@ func runScreenDecodeWorkers(decoders []frameDecoder, frames <-chan *capturedScre
 			defer wg.Done()
 			var frameBuf []byte
 			for {
+				if !waitWhilePaused(isPaused, stop) {
+					return
+				}
 				select {
 				case <-stop:
 					return
 				case captured := <-frames:
 					if captured == nil {
 						continue
+					}
+					if !waitWhilePaused(isPaused, stop) {
+						recycleCapturedFrame(captured, freeBuffers)
+						return
 					}
 					encodedFrame, err := decodeCapturedFrame(dec, captured, frameBuf)
 					recycleCapturedFrame(captured, freeBuffers)

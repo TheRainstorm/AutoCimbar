@@ -16,42 +16,38 @@ const (
 )
 
 type TransferConfig struct {
-	RQ             int    `json:"rq"`
-	Q              int    `json:"q,omitempty"`
-	Screen         int    `json:"screen"`
-	Cell           string `json:"cell"`
-	ECC            *int   `json:"ecc"`
-	Packets        int    `json:"packets"`
-	Position       string `json:"position"`
-	Scale          int    `json:"scale"`
-	FPS            int    `json:"fps"`
-	Output         string `json:"output"`
-	Backend        string `json:"backend"`
-	SymbolDir      string `json:"symbols"`
-	BlockSize      int    `json:"blockSize"`
-	NoZstd         bool   `json:"noZstd"`
-	DecodeWorkers  int    `json:"decodeWorkers"`
-	TimeoutSeconds int    `json:"timeoutSeconds"`
+	RQ            int    `json:"rq"`
+	Q             int    `json:"q,omitempty"`
+	Screen        int    `json:"screen"`
+	Cell          string `json:"cell"`
+	ECC           *int   `json:"ecc"`
+	Packets       int    `json:"packets"`
+	Position      string `json:"position"`
+	Scale         int    `json:"scale"`
+	FPS           int    `json:"fps"`
+	Output        string `json:"output"`
+	Backend       string `json:"backend"`
+	SymbolDir     string `json:"symbols"`
+	NoZstd        bool   `json:"noZstd"`
+	DecodeWorkers int    `json:"decodeWorkers"`
 }
 
 func DefaultTransferConfig() TransferConfig {
 	ecc := 3
 	return TransferConfig{
-		RQ:             120,
-		Screen:         0,
-		Cell:           "8t4s2c",
-		ECC:            &ecc,
-		Packets:        1,
-		Position:       "-0:-0",
-		Scale:          1,
-		FPS:            120,
-		Output:         ".",
-		Backend:        "symbols",
-		SymbolDir:      "",
-		BlockSize:      0,
-		NoZstd:         false,
-		DecodeWorkers:  0,
-		TimeoutSeconds: 300,
+		RQ:            120,
+		Screen:        0,
+		Cell:          "8t4s2c",
+		ECC:           &ecc,
+		Packets:       1,
+		Position:      "-0:-0",
+		Scale:         1,
+		FPS:           120,
+		Output:        ".",
+		Backend:       "symbols",
+		SymbolDir:     "",
+		NoZstd:        false,
+		DecodeWorkers: 0,
 	}
 }
 

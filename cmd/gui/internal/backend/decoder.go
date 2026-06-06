@@ -21,6 +21,7 @@ type DecoderService struct {
 type decoderTask struct {
 	session ReceiverSession
 	stop    chan struct{}
+	pause   chan bool
 	running bool
 }
 
@@ -53,26 +54,37 @@ func (s *DecoderService) StartReceive(id string) error {
 	}
 	s.mu.Lock()
 	if task.running {
+		if task.session.State == StatePaused {
+			task.session.State = StateRunning
+			session := task.session
+			pause := task.pause
+			s.mu.Unlock()
+			sendPauseSignal(pause, false)
+			s.emit("receiver:state", session)
+			return nil
+		}
 		s.mu.Unlock()
 		return nil
 	}
 	task.stop = make(chan struct{})
+	task.pause = make(chan bool, 1)
 	task.running = true
 	task.session.State = StateRunning
 	session := task.session
 	stop := task.stop
+	pause := task.pause
 	s.mu.Unlock()
 	s.emit("receiver:state", session)
-	go s.run(task, session, stop)
+	go s.run(task, session, stop, pause)
 	return nil
 }
 
 func (s *DecoderService) PauseReceive(id string) error {
-	return s.stopWithState(id, StatePaused)
+	return s.setPaused(id, true)
 }
 
 func (s *DecoderService) ResumeReceive(id string) error {
-	return s.StartReceive(id)
+	return s.setPaused(id, false)
 }
 
 func (s *DecoderService) StopReceive(id string) error {
@@ -87,7 +99,52 @@ func (s *DecoderService) GetReceiverState(id string) (ReceiverSession, error) {
 	return task.session, nil
 }
 
-func (s *DecoderService) run(task *decoderTask, session ReceiverSession, stop <-chan struct{}) {
+func (s *DecoderService) setPaused(id string, paused bool) error {
+	task, err := s.get(id)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	if !task.running {
+		s.mu.Unlock()
+		if paused {
+			return nil
+		}
+		return s.StartReceive(id)
+	}
+	if paused {
+		task.session.State = StatePaused
+	} else {
+		task.session.State = StateRunning
+	}
+	session := task.session
+	pause := task.pause
+	s.mu.Unlock()
+
+	sendPauseSignal(pause, paused)
+	s.emit("receiver:state", session)
+	return nil
+}
+
+func sendPauseSignal(pause chan bool, paused bool) {
+	if pause == nil {
+		return
+	}
+	select {
+	case pause <- paused:
+	default:
+		select {
+		case <-pause:
+		default:
+		}
+		select {
+		case pause <- paused:
+		default:
+		}
+	}
+}
+
+func (s *DecoderService) run(task *decoderTask, session ReceiverSession, stop <-chan struct{}, pause <-chan bool) {
 	cfg := session.Config
 	tile, shapeBits, colorBits, err := cellParts(cfg)
 	if err != nil {
@@ -99,10 +156,6 @@ func (s *DecoderService) run(task *decoderTask, session ReceiverSession, stop <-
 		s.fail(task, err)
 		return
 	}
-	timeout := time.Duration(cfg.TimeoutSeconds) * time.Second
-	if timeout <= 0 {
-		timeout = 24 * time.Hour
-	}
 	log := newEventLogWriter(s.app, "receiver:log", session.ID)
 	result, err := coreapp.DecodeScreenToPath(coreapp.ScreenDecodeConfig{
 		OutputPath:      cfg.Output,
@@ -110,7 +163,6 @@ func (s *DecoderService) run(task *decoderTask, session ReceiverSession, stop <-
 		GridSize:        gridSize,
 		Scale:           cfg.Scale,
 		SymbolDir:       cfg.SymbolDir,
-		BlockSize:       cfg.BlockSize,
 		ECCPercent:      eccValue(cfg),
 		ColorBits:       colorBits,
 		ShapeBits:       shapeBits,
@@ -119,12 +171,12 @@ func (s *DecoderService) run(task *decoderTask, session ReceiverSession, stop <-
 		Region:          regionFromConfig(cfg),
 		FPS:             cfg.FPS,
 		DecodeWorkers:   cfg.DecodeWorkers,
-		Timeout:         timeout,
 		Progress:        log,
 		Stop:            stop,
+		Pause:           pause,
 	})
 	s.mu.Lock()
-	if task.session.State == StatePaused || task.session.State == StateStopped {
+	if task.session.State == StateStopped {
 		task.running = false
 		session := task.session
 		s.mu.Unlock()
