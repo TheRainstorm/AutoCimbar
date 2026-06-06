@@ -12,7 +12,7 @@ interface Window {
       ByName: (name: string, ...args: unknown[]) => Promise<unknown>
     }
     Events?: {
-      On: (name: string, callback: (data: unknown) => void) => (() => void) | void
+      On: (name: string, callback: (event: unknown) => void) => (() => void) | void
       Emit: (name: string, ...data: unknown[]) => void
     }
   }

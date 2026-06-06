@@ -58,6 +58,11 @@ export interface ReceiverMetrics {
 
 type BindingMethod = (...args: unknown[]) => Promise<unknown>
 
+interface WailsEventLike {
+  data?: unknown
+  detail?: unknown
+}
+
 const backendPackage = 'github.com/autocambar/autocambar/cmd/gui/internal/backend'
 let runtimeScriptPromise: Promise<void> | undefined
 
@@ -188,10 +193,23 @@ export const DecoderService = {
 export function onEvent<T>(name: string, handler: (payload: T) => void): () => void {
   let stop: (() => void) | undefined
   void loadRuntimeScript().then(() => {
-    const off = window.wails?.Events?.On(name, (payload: unknown) => handler(payload as T))
+    const off = window.wails?.Events?.On(name, (event: unknown) => handler(unwrapEventPayload<T>(event)))
     if (typeof off === 'function') {
       stop = off
     }
   })
   return () => stop?.()
+}
+
+function unwrapEventPayload<T>(event: unknown): T {
+  if (event && typeof event === 'object') {
+    const ev = event as WailsEventLike
+    if ('data' in ev) {
+      return ev.data as T
+    }
+    if ('detail' in ev) {
+      return ev.detail as T
+    }
+  }
+  return event as T
 }

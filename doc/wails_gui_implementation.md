@@ -57,6 +57,7 @@ Add a Wails v3 desktop GUI for AutoCimBar while preserving the existing high-per
 - `src/runtime/api.ts`
   - Typed wrapper for Wails services and events.
   - Loads `/wails/runtime.js` at runtime, calls `window.wails.Call.ByName`, and subscribes with `window.wails.Events.On`.
+  - Unwraps Wails v3 event payloads from `event.data` before updating Vue state.
   - Includes a mock fallback so the Vite UI can still build and preview outside Wails.
 
 ## Implementation Process
@@ -80,10 +81,16 @@ Completed checks:
 export PATH=/usr/local/go/bin:$PATH
 go test ./...
 cd cmd/gui/frontend && npm run build
-GOOS=windows GOARCH=amd64 go build -o bin/gui.exe ./cmd/gui
+GOOS=windows GOARCH=amd64 go build -ldflags="-H windowsgui" -o bin/gui.exe ./cmd/gui
 ```
 
 All checks passed on 2026-06-06. The generated Windows binary is `bin/gui.exe`.
+
+## Debug Notes
+
+- Wails v3 event callbacks receive an event object. The emitted payload is in `event.data`.
+- If the frontend treats the event object as a `SenderSession`, controls later call backend methods with an empty or wrong session id. The backend then reports `sender session not found`.
+- The Windows GUI should be built with `-ldflags="-H windowsgui"` to avoid opening a console window.
 
 ## Follow-up
 

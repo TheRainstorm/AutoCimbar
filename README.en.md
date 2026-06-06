@@ -57,7 +57,7 @@ cd cmd/gui/frontend
 npm install
 npm run build
 cd ../../..
-GOOS=windows GOARCH=amd64 go build -o bin/gui.exe ./cmd/gui
+GOOS=windows GOARCH=amd64 go build -ldflags="-H windowsgui" -o bin/gui.exe ./cmd/gui
 ```
 
 ## Quick Start
