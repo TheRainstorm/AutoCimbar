@@ -77,6 +77,10 @@ async function chooseOutput() {
   if (path) config.output = path
 }
 
+async function minimizeToTray() {
+  await AppService.hideMainWindow()
+}
+
 async function startSender() {
   if (!selectedFile.value) return
   await ConfigService.saveConfig({ ...config })
@@ -163,9 +167,9 @@ onMounted(() => {
 
 <template>
   <main class="h-screen overflow-auto bg-gray-950 text-gray-100">
-    <div class="flex min-h-full w-full flex-col gap-3 px-4 py-3">
-      <section class="rounded-xl border border-white/10 bg-gray-900/80 p-3 shadow-lg backdrop-blur-xl">
-        <div class="grid gap-3 md:grid-cols-[110px_1fr_auto]">
+    <div class="flex min-h-full w-full min-w-0 flex-col gap-3 px-4 py-3">
+      <section class="min-w-0 rounded-xl border border-white/10 bg-gray-900/80 p-3 shadow-lg backdrop-blur-xl">
+        <div class="grid min-w-0 gap-3 md:grid-cols-[110px_1fr_auto_auto]">
           <label class="block">
             <span class="text-xs text-gray-400">RQ</span>
             <input v-model.number="config.rq" type="number" min="1" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" />
@@ -178,6 +182,9 @@ onMounted(() => {
           </label>
           <button class="self-end rounded-lg border border-white/10 bg-gray-800 px-4 py-2 text-sm text-gray-100 shadow-lg transition-all hover:scale-105 hover:bg-gray-700" @click="advancedOpen = !advancedOpen">
             Advanced
+          </button>
+          <button class="self-end rounded-lg border border-sky-400/20 bg-sky-500/10 px-4 py-2 text-sm text-sky-100 shadow-lg transition-all hover:scale-105 hover:bg-sky-500/20" @click="minimizeToTray">
+            To Tray
           </button>
         </div>
 
@@ -232,8 +239,8 @@ onMounted(() => {
         </div>
       </section>
 
-      <section class="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_1fr]">
-        <div class="rounded-xl border border-white/10 bg-gray-900/75 p-4 shadow-glow backdrop-blur-xl">
+      <section class="grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div class="min-w-0 rounded-xl border border-white/10 bg-gray-900/75 p-4 shadow-glow backdrop-blur-xl">
           <div class="mb-3 flex items-center justify-between">
             <div>
               <h2 class="text-lg font-semibold text-white">Sender</h2>
@@ -256,12 +263,12 @@ onMounted(() => {
             <button :disabled="!canControlSender" class="rounded-lg bg-rose-500/90 px-3 py-2 text-sm font-medium text-white shadow-lg transition-all hover:scale-105 disabled:cursor-not-allowed disabled:bg-gray-700 disabled:text-gray-500" @click="stopSender">End</button>
           </div>
 
-          <div class="mt-3 h-28 overflow-auto rounded-lg border border-white/10 bg-black/30 p-2 font-mono text-xs leading-5 text-gray-300">
-            <div v-for="(line, idx) in senderLogs" :key="idx" class="whitespace-nowrap">{{ line }}</div>
+          <div class="mt-3 h-28 min-w-0 max-w-full overflow-x-auto overflow-y-auto rounded-lg border border-white/10 bg-black/30 p-2 font-mono text-xs leading-5 text-gray-300">
+            <div v-for="(line, idx) in senderLogs" :key="idx" class="w-max min-w-full whitespace-nowrap">{{ line }}</div>
           </div>
         </div>
 
-        <div class="rounded-xl border border-white/10 bg-gray-900/75 p-4 shadow-glow backdrop-blur-xl">
+        <div class="min-w-0 rounded-xl border border-white/10 bg-gray-900/75 p-4 shadow-glow backdrop-blur-xl">
           <div class="mb-3 flex items-center justify-between">
             <div>
               <h2 class="text-lg font-semibold text-white">Receiver</h2>
@@ -318,8 +325,8 @@ onMounted(() => {
             <button :disabled="!canControlReceiver" class="rounded-lg bg-rose-500/90 px-3 py-2 text-sm font-medium text-white shadow-lg transition-all hover:scale-105 disabled:cursor-not-allowed disabled:bg-gray-700 disabled:text-gray-500" @click="stopReceiver">End</button>
           </div>
 
-          <div class="mt-3 h-24 overflow-auto rounded-lg border border-white/10 bg-black/30 p-2 font-mono text-xs leading-5 text-gray-300">
-            <div v-for="(line, idx) in receiverLogs" :key="idx" class="whitespace-nowrap">{{ line }}</div>
+          <div class="mt-3 h-24 min-w-0 max-w-full overflow-x-auto overflow-y-auto rounded-lg border border-white/10 bg-black/30 p-2 font-mono text-xs leading-5 text-gray-300">
+            <div v-for="(line, idx) in receiverLogs" :key="idx" class="w-max min-w-full whitespace-nowrap">{{ line }}</div>
           </div>
         </div>
       </section>

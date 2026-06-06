@@ -79,15 +79,11 @@ func (s *AppService) ListScreens() []ScreenInfo {
 }
 
 func (s *AppService) ShowMainWindow() {
-	if s.window != nil {
-		s.window.Show()
-	}
+	showMainWindow(s.window)
 }
 
 func (s *AppService) HideMainWindow() {
-	if s.window != nil {
-		s.window.Hide()
-	}
+	hideMainWindow(s.window)
 }
 
 func (s *AppService) Quit() {
@@ -117,21 +113,41 @@ func (s *AppService) SetAutoStart(enabled bool) error {
 	return s.app.Autostart.Disable()
 }
 
+func showMainWindow(window *application.WebviewWindow) {
+	if window == nil {
+		return
+	}
+	window.Restore()
+	window.Show()
+	window.Focus()
+}
+
+func hideMainWindow(window *application.WebviewWindow) {
+	if window == nil {
+		return
+	}
+	window.Hide()
+}
+
 func ConfigureSystemTray(app *application.App, window *application.WebviewWindow) {
 	tray := app.SystemTray.New()
 	tray.SetTemplateIcon(icons.SystrayMacTemplate)
 	tray.SetTooltip("AutoCimBar")
 	tray.AttachWindow(window)
 	tray.OnClick(func() {
-		tray.ToggleWindow()
+		if window != nil && window.IsVisible() {
+			hideMainWindow(window)
+			return
+		}
+		showMainWindow(window)
 	})
 
 	menu := app.NewMenu()
 	menu.Add("显示").OnClick(func(ctx *application.Context) {
-		window.Show()
+		showMainWindow(window)
 	})
 	menu.Add("隐藏").OnClick(func(ctx *application.Context) {
-		window.Hide()
+		hideMainWindow(window)
 	})
 	autoStartEnabled := false
 	if status, err := app.Autostart.Status(); err == nil {

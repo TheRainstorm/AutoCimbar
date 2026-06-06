@@ -33,11 +33,8 @@ func main() {
 		Assets: application.AssetOptions{
 			Handler: application.BundledAssetFileServer(assets),
 		},
-		Windows: application.WindowsOptions{
-			DisableQuitOnLastWindowClosed: true,
-		},
 		Mac: application.MacOptions{
-			ApplicationShouldTerminateAfterLastWindowClosed: false,
+			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
 	})
 

@@ -79,6 +79,11 @@ Add a Wails v3 desktop GUI for AutoCimBar while preserving the existing high-per
    - Moved autostart control to the tray menu.
    - Reduced default window size and panel spacing.
 9. Changed the GUI size control from raw `Q` to reference `RQ`, wired it through tile-aware grid resolution, added missing advanced parameters, and changed the GUI default packet count to 1.
+10. Adjusted window and tray behavior:
+    - Closing the main Wails window now exits the app.
+    - The top bar has a dedicated `To Tray` button for hiding the dashboard while keeping background tasks alive.
+    - Tray `显示` restores, shows, and focuses the main window.
+    - Sender and receiver logs stay on one line and scroll horizontally inside their own panels instead of widening the whole window.
 
 ## Verification
 
@@ -100,6 +105,7 @@ All checks passed on 2026-06-06. The generated Windows binary is `bin/gui.exe`.
 - The Windows GUI should be built with `-ldflags="-H windowsgui"` to avoid opening a console window.
 - The native sender window is created on a locked OS thread. Closing it from another goroutine should post `WM_CLOSE` to that window thread instead of directly calling `DestroyWindow`.
 - Windows window classes remain registered for the process lifetime. `ERROR_CLASS_ALREADY_EXISTS` is expected after the first send and is safe to ignore.
+- `Show()` alone may not foreground a hidden/minimized window from the tray. The GUI uses `Restore()`, `Show()`, then `Focus()` for the tray `显示` action.
 
 ## Follow-up
 
