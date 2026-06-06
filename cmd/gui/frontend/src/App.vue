@@ -80,7 +80,7 @@ async function chooseOutput() {
 async function startSender() {
   if (!selectedFile.value) return
   await ConfigService.saveConfig({ ...config })
-  if (!sender.value) {
+  if (!sender.value || senderState.value !== 'paused') {
     sender.value = await EncoderService.prepareSend(selectedFile.value.path, { ...config })
   }
   senderState.value = 'running'
@@ -162,8 +162,8 @@ onMounted(() => {
       <section class="rounded-xl border border-white/10 bg-gray-900/80 p-3 shadow-lg backdrop-blur-xl">
         <div class="grid gap-3 md:grid-cols-[110px_1fr_auto]">
           <label class="block">
-            <span class="text-xs text-gray-400">Q</span>
-            <input v-model.number="config.q" type="number" min="1" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" />
+            <span class="text-xs text-gray-400">RQ</span>
+            <input v-model.number="config.rq" type="number" min="1" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" />
           </label>
           <label class="block">
             <span class="text-xs text-gray-400">Screen</span>
@@ -188,8 +188,12 @@ onMounted(() => {
                 <input v-model.number="config.ecc" type="number" min="0" max="100" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" />
               </label>
               <label class="block">
-                <span class="text-xs text-gray-400">Packets</span>
+                <span class="text-xs text-gray-400">Packets (-p)</span>
                 <input v-model.number="config.packets" type="number" min="1" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" />
+              </label>
+              <label class="block">
+                <span class="text-xs text-gray-400">B</span>
+                <input v-model.number="config.scale" type="number" min="1" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" />
               </label>
               <label class="block">
                 <span class="text-xs text-gray-400">X:Y</span>
@@ -198,6 +202,33 @@ onMounted(() => {
               <label class="block">
                 <span class="text-xs text-gray-400">FPS</span>
                 <input v-model.number="config.fps" type="number" min="1" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" />
+              </label>
+              <label class="block">
+                <span class="text-xs text-gray-400">Backend</span>
+                <select v-model="config.backend" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400">
+                  <option value="symbols">symbols</option>
+                  <option value="qr">qr</option>
+                </select>
+              </label>
+              <label class="block">
+                <span class="text-xs text-gray-400">Symbols (-s)</span>
+                <input v-model="config.symbols" placeholder="built-in" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" />
+              </label>
+              <label class="block">
+                <span class="text-xs text-gray-400">Block size</span>
+                <input v-model.number="config.blockSize" type="number" min="0" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" />
+              </label>
+              <label class="block">
+                <span class="text-xs text-gray-400">Workers</span>
+                <input v-model.number="config.decodeWorkers" type="number" min="0" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" />
+              </label>
+              <label class="block">
+                <span class="text-xs text-gray-400">Timeout (s)</span>
+                <input v-model.number="config.timeoutSeconds" type="number" min="0" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" />
+              </label>
+              <label class="flex items-center gap-2 self-end rounded-lg border border-white/10 bg-gray-800 px-3 py-2 text-sm text-gray-100">
+                <input v-model="config.noZstd" type="checkbox" class="h-4 w-4 accent-sky-500" />
+                <span>No zstd</span>
               </label>
             </div>
           </div>

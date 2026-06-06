@@ -1,6 +1,7 @@
 export type TaskState = 'idle' | 'running' | 'paused' | 'stopped' | 'done' | 'error'
 
 export interface TransferConfig {
+  rq: number
   q: number
   screen: number
   cell: string
@@ -11,6 +12,11 @@ export interface TransferConfig {
   fps: number
   output: string
   backend: string
+  symbols: string
+  blockSize: number
+  noZstd: boolean
+  decodeWorkers: number
+  timeoutSeconds: number
 }
 
 export interface SelectedFile {
@@ -118,16 +124,22 @@ async function call<T>(service: string, method: string, fallback: () => T | Prom
 }
 
 export const defaultConfig: TransferConfig = {
+  rq: 120,
   q: 120,
   screen: 0,
-  cell: '4t4s8c',
+  cell: '8t4s2c',
   ecc: 3,
-  packets: 3,
+  packets: 1,
   position: '-0:-0',
   scale: 1,
   fps: 120,
   output: '.',
   backend: 'symbols',
+  symbols: '',
+  blockSize: 0,
+  noZstd: false,
+  decodeWorkers: 0,
+  timeoutSeconds: 300,
 }
 
 export const AppService = {

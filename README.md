@@ -84,7 +84,7 @@ Windows GUI:
 ./bin/gui.exe
 ```
 
-GUI 提供 Sender 和 Receiver 两个独立面板，可以同时发送和接收；二维码/符号显示仍沿用原生 Windows 高性能置顶窗口。主界面只暴露 `Q` 和屏幕选择，高级参数在 Advanced 面板中配置。窗口支持最小化到系统托盘，托盘菜单可显示或退出程序。
+GUI 提供 Sender 和 Receiver 两个独立面板，可以同时发送和接收；二维码/符号显示仍沿用原生 Windows 高性能置顶窗口。主界面只暴露 `RQ` 和屏幕选择，高级参数在 Advanced 面板中配置。GUI 会读取 `~/.autocimbar` 的 `[default]` 和 `[gui]` 配置；未写 `RQ` 时会兼容旧的 `Q` 值。窗口支持最小化到系统托盘，托盘菜单可显示或退出程序。
 
 ## 关键参数
 

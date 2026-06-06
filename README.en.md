@@ -84,7 +84,7 @@ Windows GUI:
 ./bin/gui.exe
 ```
 
-The GUI provides independent Sender and Receiver panels that can run at the same time. The QR/symbol display still uses the native high-performance Windows topmost window. The main UI exposes only `Q` and screen selection; advanced transfer parameters live in the Advanced panel. The main window can be minimized to the system tray, whose menu can show or quit the app.
+The GUI provides independent Sender and Receiver panels that can run at the same time. The QR/symbol display still uses the native high-performance Windows topmost window. The main UI exposes only `RQ` and screen selection; advanced transfer parameters live in the Advanced panel. The GUI reads `[default]` and `[gui]` from `~/.autocimbar`; when `RQ` is absent, old `Q` values are treated as the reference Q. The main window can be minimized to the system tray, whose menu can show or quit the app.
 
 ## Common Options
 

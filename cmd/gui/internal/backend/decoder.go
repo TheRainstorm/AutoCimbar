@@ -94,12 +94,23 @@ func (s *DecoderService) run(task *decoderTask, session ReceiverSession, stop <-
 		s.fail(task, err)
 		return
 	}
+	gridSize, err := gridSizeFromConfig(cfg, tile, shapeBits)
+	if err != nil {
+		s.fail(task, err)
+		return
+	}
+	timeout := time.Duration(cfg.TimeoutSeconds) * time.Second
+	if timeout <= 0 {
+		timeout = 24 * time.Hour
+	}
 	log := newEventLogWriter(s.app, "receiver:log", session.ID)
 	result, err := coreapp.DecodeScreenToPath(coreapp.ScreenDecodeConfig{
 		OutputPath:      cfg.Output,
 		Backend:         cfg.Backend,
-		GridSize:        cfg.Q,
+		GridSize:        gridSize,
 		Scale:           cfg.Scale,
+		SymbolDir:       cfg.SymbolDir,
+		BlockSize:       cfg.BlockSize,
 		ECCPercent:      eccValue(cfg),
 		ColorBits:       colorBits,
 		ShapeBits:       shapeBits,
@@ -107,7 +118,8 @@ func (s *DecoderService) run(task *decoderTask, session ReceiverSession, stop <-
 		PacketsPerFrame: cfg.Packets,
 		Region:          regionFromConfig(cfg),
 		FPS:             cfg.FPS,
-		Timeout:         24 * time.Hour,
+		DecodeWorkers:   cfg.DecodeWorkers,
+		Timeout:         timeout,
 		Progress:        log,
 		Stop:            stop,
 	})

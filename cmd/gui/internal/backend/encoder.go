@@ -107,17 +107,25 @@ func (s *EncoderService) run(task *encoderTask, session SenderSession, stop <-ch
 		s.fail(task, err)
 		return
 	}
+	gridSize, err := gridSizeFromConfig(cfg, tile, shapeBits)
+	if err != nil {
+		s.fail(task, err)
+		return
+	}
 	log := newEventLogWriter(s.app, "sender:log", session.ID)
 	result, err := coreapp.EncodeFileToScreen(coreapp.ScreenEncodeConfig{
 		InputPath:       session.FilePath,
 		Backend:         cfg.Backend,
-		GridSize:        cfg.Q,
+		GridSize:        gridSize,
 		Scale:           cfg.Scale,
+		SymbolDir:       cfg.SymbolDir,
+		BlockSize:       cfg.BlockSize,
 		ECCPercent:      eccValue(cfg),
 		ColorBits:       colorBits,
 		ShapeBits:       shapeBits,
 		Tile:            tile,
 		PacketsPerFrame: cfg.Packets,
+		NoZstd:          cfg.NoZstd,
 		Region:          regionFromConfig(cfg),
 		FPS:             cfg.FPS,
 		Progress:        log,

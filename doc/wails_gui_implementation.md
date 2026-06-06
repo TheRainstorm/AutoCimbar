@@ -52,8 +52,9 @@ Add a Wails v3 desktop GUI for AutoCimBar while preserving the existing high-per
 - `src/App.vue`
   - Dark glassmorphism dashboard.
   - Sender and Receiver panels run side by side.
-  - Main UI only exposes `Q` and screen selection.
-  - Advanced settings accordion exposes `cell`, `ecc`, `packets`, `X:Y`, and `fps`.
+  - Main UI only exposes `RQ` and screen selection.
+  - Advanced settings accordion exposes `cell`, `ecc`, `packets`, `B`, `X:Y`, `fps`, backend, symbols, block size, zstd, decode workers, and timeout.
+  - GUI defaults are loaded from `~/.autocimbar` using `[default]` plus `[gui]`; old `Q` values are accepted as `RQ` when `RQ` is absent.
 - `src/runtime/api.ts`
   - Typed wrapper for Wails services and events.
   - Loads `/wails/runtime.js` at runtime, calls `window.wails.Call.ByName`, and subscribes with `window.wails.Events.On`.
@@ -74,9 +75,10 @@ Add a Wails v3 desktop GUI for AutoCimBar while preserving the existing high-per
 7. Rebuilt `frontend/dist` so the Windows GUI binary embeds the latest frontend bundle.
 8. Compact layout pass:
    - Removed the large header from the main UI.
-   - Moved `Q` and screen selection to the top.
+   - Moved `RQ` and screen selection to the top.
    - Moved autostart control to the tray menu.
    - Reduced default window size and panel spacing.
+9. Changed the GUI size control from raw `Q` to reference `RQ`, wired it through tile-aware grid resolution, added missing advanced parameters, and changed the GUI default packet count to 1.
 
 ## Verification
 
