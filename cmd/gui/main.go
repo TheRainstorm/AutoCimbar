@@ -14,6 +14,9 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+//go:embed assets/icon.png
+var appIcon []byte
+
 func main() {
 	appSvc := backend.NewAppService()
 	configSvc := backend.NewConfigService()
@@ -23,6 +26,7 @@ func main() {
 	wailsApp := application.New(application.Options{
 		Name:        "AutoCimBar",
 		Description: "High-speed QR screen channel transfer tool",
+		Icon:        appIcon,
 		LogLevel:    slog.LevelInfo,
 		Services: []application.Service{
 			application.NewService(appSvc),
@@ -50,7 +54,7 @@ func main() {
 	appSvc.Attach(wailsApp, mainWindow)
 	encoderSvc.Attach(wailsApp)
 	decoderSvc.Attach(wailsApp)
-	backend.ConfigureSystemTray(wailsApp, mainWindow)
+	backend.ConfigureSystemTray(wailsApp, mainWindow, appIcon)
 	mainWindow.Show()
 
 	if err := wailsApp.Run(); err != nil {

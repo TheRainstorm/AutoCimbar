@@ -10,7 +10,6 @@ import (
 
 	coreapp "github.com/autocambar/autocambar/pkg/app"
 	"github.com/wailsapp/wails/v3/pkg/application"
-	"github.com/wailsapp/wails/v3/pkg/icons"
 )
 
 type AppService struct {
@@ -28,7 +27,7 @@ func (s *AppService) Attach(app *application.App, window *application.WebviewWin
 }
 
 func (s *AppService) GetAppInfo() AppInfo {
-	return AppInfo{Name: "AutoCimBar", Version: "0.1.0-gui"}
+	return AppInfo{Name: "AutoCimBar", Version: "1.0.0"}
 }
 
 func (s *AppService) SelectFileToSend() (SelectedFile, error) {
@@ -129,9 +128,11 @@ func hideMainWindow(window *application.WebviewWindow) {
 	window.Hide()
 }
 
-func ConfigureSystemTray(app *application.App, window *application.WebviewWindow) {
+func ConfigureSystemTray(app *application.App, window *application.WebviewWindow, icon []byte) {
 	tray := app.SystemTray.New()
-	tray.SetTemplateIcon(icons.SystrayMacTemplate)
+	if len(icon) > 0 {
+		tray.SetIcon(icon)
+	}
 	tray.SetTooltip("AutoCimBar")
 	tray.AttachWindow(window)
 	tray.OnClick(func() {

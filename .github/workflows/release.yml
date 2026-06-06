@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Build Windows amd64
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.4"
+          cache: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: cmd/gui/frontend/package-lock.json
+
+      - name: Build GUI frontend
+        working-directory: cmd/gui/frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build Windows binaries
+        env:
+          GOOS: windows
+          GOARCH: amd64
+        run: |
+          mkdir -p dist/windows-amd64
+          go build -trimpath -o dist/windows-amd64/encoder.exe ./cmd/encoder
+          go build -trimpath -o dist/windows-amd64/decoder.exe ./cmd/decoder
+          go build -trimpath -o dist/windows-amd64/tilegen.exe ./cmd/tilegen
+          go build -trimpath -ldflags="-H windowsgui" -o dist/windows-amd64/gui.exe ./cmd/gui
+          cp README.md README.en.md dist/windows-amd64/
+
+      - name: Package
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          archive="autocimbar-v${version}-windows-amd64.zip"
+          (cd dist/windows-amd64 && zip -9 -r "../${archive}" .)
+          sha256sum "dist/${archive}" > "dist/${archive}.sha256"
+          echo "archive=${archive}" >> "$GITHUB_ENV"
+
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/${{ env.archive }}
+            dist/${{ env.archive }}.sha256
+          generate_release_notes: true

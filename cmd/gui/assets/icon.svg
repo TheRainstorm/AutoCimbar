@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="AutoCimBar icon">
+  <rect width="256" height="256" rx="56" fill="#020617"/>
+  <rect x="18" y="18" width="220" height="220" rx="46" fill="#0f172a"/>
+  <rect x="34" y="34" width="188" height="188" rx="34" fill="#111827"/>
+  <g>
+    <rect x="55" y="54" width="33" height="33" rx="7" fill="#38bdf8"/>
+    <rect x="96" y="54" width="33" height="33" rx="7" fill="#e0f2fe"/>
+    <rect x="137" y="54" width="33" height="33" rx="7" fill="#10b981"/>
+    <rect x="178" y="54" width="22" height="33" rx="7" fill="#7dd3fc"/>
+
+    <rect x="55" y="95" width="33" height="33" rx="7" fill="#ecfeff"/>
+    <rect x="96" y="95" width="33" height="33" rx="7" fill="#22d3ee"/>
+    <rect x="137" y="95" width="33" height="33" rx="7" fill="#f8fafc"/>
+    <rect x="178" y="95" width="22" height="33" rx="7" fill="#34d399"/>
+
+    <rect x="55" y="136" width="33" height="33" rx="7" fill="#0ea5e9"/>
+    <rect x="96" y="136" width="33" height="33" rx="7" fill="#d1fae5"/>
+    <rect x="137" y="136" width="33" height="33" rx="7" fill="#67e8f9"/>
+    <rect x="178" y="136" width="22" height="33" rx="7" fill="#f8fafc"/>
+  </g>
+  <path d="M64 201H192" stroke="#f8fafc" stroke-width="16" stroke-linecap="round"/>
+  <path d="M170 181L194 201L170 221" fill="none" stroke="#f8fafc" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

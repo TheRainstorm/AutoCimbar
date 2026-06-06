@@ -84,6 +84,11 @@ Add a Wails v3 desktop GUI for AutoCimBar while preserving the existing high-per
     - The top bar has a dedicated `To Tray` button for hiding the dashboard while keeping background tasks alive.
     - Tray `显示` restores, shows, and focuses the main window.
     - Sender and receiver logs stay on one line and scroll horizontally inside their own panels instead of widening the whole window.
+11. Added Windows GUI application icon and release automation:
+    - `cmd/gui/assets/icon.svg` is the editable icon source.
+    - `cmd/gui/assets/icon.png` is embedded through `application.Options.Icon` and used by the system tray.
+    - `cmd/gui/assets/icon.ico` is compiled into `cmd/gui/rsrc_windows_amd64.syso` so `gui.exe` has a native Windows file/taskbar icon.
+    - `.github/workflows/release.yml` builds Windows amd64 CLI and GUI binaries when a `v*` tag is pushed, then uploads a zip and SHA256 file to GitHub Releases.
 
 ## Verification
 
@@ -97,6 +102,14 @@ GOOS=windows GOARCH=amd64 go build -ldflags="-H windowsgui" -o bin/gui.exe ./cmd
 ```
 
 All checks passed on 2026-06-06. The generated Windows binary is `bin/gui.exe`.
+
+The icon resource can be regenerated with:
+
+```bash
+convert -background none cmd/gui/assets/icon.svg -resize 256x256 -depth 8 PNG32:cmd/gui/assets/icon.png
+convert -background none cmd/gui/assets/icon.svg -depth 8 -define icon:auto-resize=256,128,64,48,32,16 cmd/gui/assets/icon.ico
+rsrc -ico cmd/gui/assets/icon.ico -o cmd/gui/rsrc_windows_amd64.syso
+```
 
 ## Debug Notes
 
