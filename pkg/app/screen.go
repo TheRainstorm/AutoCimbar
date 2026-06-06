@@ -36,6 +36,7 @@ type ScreenEncodeConfig struct {
 	Addr            string
 	Open            bool
 	Progress        io.Writer
+	Stop            <-chan struct{}
 }
 
 type ScreenDecodeConfig struct {
@@ -55,7 +56,10 @@ type ScreenDecodeConfig struct {
 	DecodeWorkers   int
 	Timeout         time.Duration
 	Progress        io.Writer
+	Stop            <-chan struct{}
 }
+
+var ErrStopped = errors.New("operation stopped")
 
 func DisplayBounds() []image.Rectangle {
 	count := screenshot.NumActiveDisplays()
@@ -349,6 +353,9 @@ func DecodeScreenToPath(cfg ScreenDecodeConfig) (*WriteSourceResult, error) {
 				return nil, fmt.Errorf("capture screen: %w", err)
 			}
 			return nil, err
+		case <-cfg.Stop:
+			timeout.Stop()
+			return nil, ErrStopped
 		case <-timeout.C:
 			continue
 		}

@@ -3,6 +3,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"image"
 	"image/png"
@@ -26,7 +27,16 @@ func runScreenEncoderBackend(cfg ScreenEncodeConfig, source *screenFrameSource, 
 			_ = openBrowser("http://" + cfg.Addr + "/")
 		}()
 	}
-	return http.ListenAndServe(cfg.Addr, mux)
+	server := &http.Server{Addr: cfg.Addr, Handler: mux}
+	if cfg.Stop != nil {
+		go func() {
+			<-cfg.Stop
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			_ = server.Shutdown(ctx)
+		}()
+	}
+	return server.ListenAndServe()
 }
 
 func (s *screenFrameSource) frameHandler(w http.ResponseWriter, _ *http.Request) {

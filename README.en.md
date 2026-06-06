@@ -50,6 +50,16 @@ GOOS=windows GOARCH=amd64 go build -o bin/encoder.exe ./cmd/encoder
 GOOS=windows GOARCH=amd64 go build -o bin/decoder.exe ./cmd/decoder
 ```
 
+GUI application for Windows:
+
+```bash
+cd cmd/gui/frontend
+npm install
+npm run build
+cd ../../..
+GOOS=windows GOARCH=amd64 go build -o bin/gui.exe ./cmd/gui
+```
+
 ## Quick Start
 
 Screen transfer:
@@ -67,6 +77,14 @@ Offline PNG verification:
 ```
 
 The encoder sends the original file name as one-time source metadata. The decoder defaults to the current directory and saves using the sender file name. If `-o` points to a directory, the received file is saved in that directory with the sender file name. If `-o` points to a concrete file path, that path is used exactly.
+
+Windows GUI:
+
+```bash
+./bin/gui.exe
+```
+
+The GUI provides independent Sender and Receiver panels that can run at the same time. The QR/symbol display still uses the native high-performance Windows topmost window. The main UI exposes only `Q` and screen selection; advanced transfer parameters live in the Advanced panel. The main window can be minimized to the system tray, whose menu can show or quit the app.
 
 ## Common Options
 

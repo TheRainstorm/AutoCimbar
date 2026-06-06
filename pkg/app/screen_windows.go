@@ -139,6 +139,12 @@ func runScreenEncoderBackend(cfg ScreenEncodeConfig, source *screenFrameSource, 
 		return fmt.Errorf("CreateWindowExW failed: %w", callErr)
 	}
 	win.hwnd = windows.Handle(hwnd)
+	if cfg.Stop != nil {
+		go func() {
+			<-cfg.Stop
+			procDestroyWindow.Call(hwnd)
+		}()
+	}
 
 	procShowWindow.Call(hwnd, swShow)
 	procUpdateWindow.Call(hwnd)

@@ -50,6 +50,16 @@ GOOS=windows GOARCH=amd64 go build -o bin/encoder.exe ./cmd/encoder
 GOOS=windows GOARCH=amd64 go build -o bin/decoder.exe ./cmd/decoder
 ```
 
+GUI 程序（Windows）:
+
+```bash
+cd cmd/gui/frontend
+npm install
+npm run build
+cd ../../..
+GOOS=windows GOARCH=amd64 go build -o bin/gui.exe ./cmd/gui
+```
+
 ## 快速使用
 
 屏幕传输命令：
@@ -67,6 +77,14 @@ PNG 离线验证：
 ```
 
 encoder 会把原始文件名作为一次性源数据元信息发送。decoder 默认输出到当前目录，并使用发送端文件名保存；如果 `-o` 指向一个目录，也会在该目录下使用发送端文件名。只有当 `-o` 指向具体文件路径时，才会强制使用该路径。
+
+Windows GUI:
+
+```bash
+./bin/gui.exe
+```
+
+GUI 提供 Sender 和 Receiver 两个独立面板，可以同时发送和接收；二维码/符号显示仍沿用原生 Windows 高性能置顶窗口。主界面只暴露 `Q` 和屏幕选择，高级参数在 Advanced 面板中配置。窗口支持最小化到系统托盘，托盘菜单可显示或退出程序。
 
 ## 关键参数
 
