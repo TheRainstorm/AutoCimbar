@@ -133,6 +133,17 @@ func ConfigureSystemTray(app *application.App, window *application.WebviewWindow
 	menu.Add("隐藏").OnClick(func(ctx *application.Context) {
 		window.Hide()
 	})
+	autoStartEnabled := false
+	if status, err := app.Autostart.Status(); err == nil {
+		autoStartEnabled = status.Enabled
+	}
+	menu.AddCheckbox("开机自启动", autoStartEnabled).OnClick(func(ctx *application.Context) {
+		if ctx.IsChecked() {
+			_ = app.Autostart.EnableWithOptions(application.AutostartOptions{Identifier: "autocimbar"})
+			return
+		}
+		_ = app.Autostart.Disable()
+	})
 	menu.AddSeparator()
 	menu.Add("退出").OnClick(func(ctx *application.Context) {
 		app.Quit()

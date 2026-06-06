@@ -44,10 +44,10 @@ func main() {
 	mainWindow := wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:      "main",
 		Title:     "AutoCimBar",
-		Width:     1280,
-		Height:    820,
-		MinWidth:  1040,
-		MinHeight: 700,
+		Width:     1080,
+		Height:    720,
+		MinWidth:  900,
+		MinHeight: 620,
 		URL:       "/",
 	})
 	appSvc.Attach(wailsApp, mainWindow)

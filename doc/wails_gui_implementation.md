@@ -72,6 +72,11 @@ Add a Wails v3 desktop GUI for AutoCimBar while preserving the existing high-per
 5. Added Vue3 + TypeScript + Tailwind frontend with independent Sender and Receiver panels, dark card UI, receiver metrics, logs, system tray controls, and advanced settings.
 6. Fixed real Wails frontend calls by using `window.wails.Call.ByName` with fully-qualified service names instead of relying on generated bindings.
 7. Rebuilt `frontend/dist` so the Windows GUI binary embeds the latest frontend bundle.
+8. Compact layout pass:
+   - Removed the large header from the main UI.
+   - Moved `Q` and screen selection to the top.
+   - Moved autostart control to the tray menu.
+   - Reduced default window size and panel spacing.
 
 ## Verification
 
@@ -91,6 +96,8 @@ All checks passed on 2026-06-06. The generated Windows binary is `bin/gui.exe`.
 - Wails v3 event callbacks receive an event object. The emitted payload is in `event.data`.
 - If the frontend treats the event object as a `SenderSession`, controls later call backend methods with an empty or wrong session id. The backend then reports `sender session not found`.
 - The Windows GUI should be built with `-ldflags="-H windowsgui"` to avoid opening a console window.
+- The native sender window is created on a locked OS thread. Closing it from another goroutine should post `WM_CLOSE` to that window thread instead of directly calling `DestroyWindow`.
+- Windows window classes remain registered for the process lifetime. `ERROR_CLASS_ALREADY_EXISTS` is expected after the first send and is safe to ignore.
 
 ## Follow-up
 

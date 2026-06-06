@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image"
 	"runtime"
+	"syscall"
 	"sync"
 	"time"
 	"unsafe"
@@ -26,6 +27,7 @@ const (
 	swShow = 5
 
 	wmDestroy = 0x0002
+	wmClose   = 0x0010
 	wmPaint   = 0x000f
 	wmKeyDown = 0x0100
 
@@ -50,6 +52,7 @@ var (
 	procGetMessageW                   = user32.NewProc("GetMessageW")
 	procInvalidateRect                = user32.NewProc("InvalidateRect")
 	procPostQuitMessage               = user32.NewProc("PostQuitMessage")
+	procPostMessageW                  = user32.NewProc("PostMessageW")
 	procRegisterClassExW              = user32.NewProc("RegisterClassExW")
 	procSetProcessDpiAwarenessContext = user32.NewProc("SetProcessDpiAwarenessContext")
 	procSetProcessDPIAware            = user32.NewProc("SetProcessDPIAware")
@@ -116,7 +119,7 @@ func runScreenEncoderBackend(cfg ScreenEncodeConfig, source *screenFrameSource, 
 		ClassName: className,
 	}
 	atom, _, callErr := procRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)))
-	if atom == 0 {
+	if atom == 0 && callErr != syscall.Errno(windows.ERROR_CLASS_ALREADY_EXISTS) {
 		return fmt.Errorf("RegisterClassExW failed: %w", callErr)
 	}
 
@@ -142,7 +145,7 @@ func runScreenEncoderBackend(cfg ScreenEncodeConfig, source *screenFrameSource, 
 	if cfg.Stop != nil {
 		go func() {
 			<-cfg.Stop
-			procDestroyWindow.Call(hwnd)
+			procPostMessageW.Call(hwnd, wmClose, 0, 0)
 		}()
 	}
 
@@ -184,6 +187,9 @@ func nativeWndProc(hwnd uintptr, msg uint32, wparam uintptr, lparam uintptr) uin
 			procDestroyWindow.Call(hwnd)
 			return 0
 		}
+	case wmClose:
+		procDestroyWindow.Call(hwnd)
+		return 0
 	case wmDestroy:
 		procPostQuitMessage.Call(0)
 		return 0
