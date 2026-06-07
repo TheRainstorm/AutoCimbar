@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"image"
 	"runtime"
-	"syscall"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 	"unsafe"
 
@@ -32,6 +33,8 @@ const (
 	wmKeyDown = 0x0100
 
 	vkEscape = 0x1b
+	vkSpace  = 0x20
+	vkQ      = 0x51
 
 	biRGB        = 0
 	dibRGBColors = 0
@@ -84,6 +87,7 @@ type nativeWindow struct {
 	pixels []byte
 	back   []byte
 	err    error
+	paused atomic.Bool
 	mu     sync.Mutex
 }
 
@@ -183,8 +187,14 @@ func nativeWndProc(hwnd uintptr, msg uint32, wparam uintptr, lparam uintptr) uin
 		}
 		return 0
 	case wmKeyDown:
-		if wparam == vkEscape {
+		switch wparam {
+		case vkEscape, vkQ:
 			procDestroyWindow.Call(hwnd)
+			return 0
+		case vkSpace:
+			if win != nil {
+				win.togglePaused()
+			}
 			return 0
 		}
 	case wmClose:
@@ -214,6 +224,10 @@ func (w *nativeWindow) runFrameLoop(fps int, stop <-chan struct{}) {
 		case <-stop:
 			return
 		case <-ticker.C:
+			if w.isPaused() {
+				procInvalidateRect.Call(uintptr(w.hwnd), 0, 0)
+				continue
+			}
 			if err := w.updateFrame(); err != nil {
 				w.setErr(err)
 				procDestroyWindow.Call(uintptr(w.hwnd))
@@ -236,6 +250,14 @@ func (w *nativeWindow) updateFrame() error {
 	w.mu.Unlock()
 
 	return nil
+}
+
+func (w *nativeWindow) togglePaused() {
+	w.paused.Store(!w.paused.Load())
+}
+
+func (w *nativeWindow) isPaused() bool {
+	return w.paused.Load()
 }
 
 func (w *nativeWindow) paint(hwnd uintptr) {
