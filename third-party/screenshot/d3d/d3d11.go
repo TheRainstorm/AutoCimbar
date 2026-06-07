@@ -35,6 +35,10 @@ const (
 )
 
 func _D3D11CreateDevice(ppDevice **ID3D11Device, ppDeviceContext **ID3D11DeviceContext) error {
+	return _D3D11CreateDeviceForAdapter(0, ppDevice, ppDeviceContext)
+}
+
+func _D3D11CreateDeviceForAdapter(adapterIndex uint, ppDevice **ID3D11Device, ppDeviceContext **ID3D11DeviceContext) error {
 	var factory1 *IDXGIFactory1
 	if err := _CreateDXGIFactory1(&factory1); err != nil {
 		return fmt.Errorf("CreateDXGIFactory1: %w", err)
@@ -42,7 +46,7 @@ func _D3D11CreateDevice(ppDevice **ID3D11Device, ppDeviceContext **ID3D11DeviceC
 	defer factory1.Release()
 
 	var adapter1 *IDXGIAdapter1
-	if hr := factory1.EnumAdapters1(0, &adapter1); failed(hr) {
+	if hr := factory1.EnumAdapters1(adapterIndex, &adapter1); failed(hr) {
 		return fmt.Errorf("failed to enumerate desktop adapter. %w", HRESULT(hr))
 	}
 	defer adapter1.Release()
@@ -88,10 +92,14 @@ func _D3D11CreateDevice(ppDevice **ID3D11Device, ppDeviceContext **ID3D11DeviceC
 }
 
 func NewD3D11Device() (*ID3D11Device, *ID3D11DeviceContext, error) {
+	return NewD3D11DeviceForAdapter(0)
+}
+
+func NewD3D11DeviceForAdapter(adapterIndex uint) (*ID3D11Device, *ID3D11DeviceContext, error) {
 	var device *ID3D11Device
 	var deviceCtx *ID3D11DeviceContext
 
-	err := _D3D11CreateDevice(&device, &deviceCtx)
+	err := _D3D11CreateDeviceForAdapter(adapterIndex, &device, &deviceCtx)
 
 	if err != nil || device == nil || deviceCtx == nil {
 		return nil, nil, err

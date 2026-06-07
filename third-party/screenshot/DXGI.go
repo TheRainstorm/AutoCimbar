@@ -30,11 +30,15 @@ func (s *DXGIScreenshot) Init(display int) error {
 	s.display = display
 	s.rect = GetDisplayBounds(display)
 	var err error
-	s.device, s.deviceCtx, err = d3d.NewD3D11Device()
+	target, err := d3d.FindOutputByDesktopCoordinates(int32(s.rect.Min.X), int32(s.rect.Min.Y), int32(s.rect.Max.X), int32(s.rect.Max.Y))
 	if err != nil {
 		return err
 	}
-	s.ddup, err = d3d.NewIDXGIOutputDuplication(s.device, s.deviceCtx, uint(s.display))
+	s.device, s.deviceCtx, err = d3d.NewD3D11DeviceForAdapter(target.Adapter)
+	if err != nil {
+		return err
+	}
+	s.ddup, err = d3d.NewIDXGIOutputDuplication(s.device, s.deviceCtx, target.Output)
 	if err != nil {
 		return err
 	}

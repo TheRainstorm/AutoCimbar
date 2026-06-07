@@ -32,25 +32,36 @@ type RECT struct {
 	Left, Top, Right, Bottom int32
 }
 
+type DXGI_OUTPUT_DESC struct {
+	DeviceName         [32]uint16
+	DesktopCoordinates RECT
+	AttachedToDesktop  int32
+	Rotation           uint32
+	Monitor            uintptr
+}
+
 type DXGI_OUTDUPL_MOVE_RECT struct {
 	Src  POINT
 	Dest RECT
 }
 
-/*type DXGI_OUTDUPL_POINTER_POSITION struct {
-	Position POINT
-	Visible  uint32
-}
-type DXGI_OUTDUPL_FRAME_INFO struct {
-	LastPresentTime           int64
-	LastMouseUpdateTime       int64
-	AccumulatedFrames         uint32
-	RectsCoalesced            uint32
-	ProtectedContentMaskedOut uint32
-	PointerPosition           DXGI_OUTDUPL_POINTER_POSITION
-	TotalMetadataBufferSize   uint32
-	PointerShapeBufferSize    uint32
-}*/
+/*
+	type DXGI_OUTDUPL_POINTER_POSITION struct {
+		Position POINT
+		Visible  uint32
+	}
+
+	type DXGI_OUTDUPL_FRAME_INFO struct {
+		LastPresentTime           int64
+		LastMouseUpdateTime       int64
+		AccumulatedFrames         uint32
+		RectsCoalesced            uint32
+		ProtectedContentMaskedOut uint32
+		PointerPosition           DXGI_OUTDUPL_POINTER_POSITION
+		TotalMetadataBufferSize   uint32
+		PointerShapeBufferSize    uint32
+	}
+*/
 type DXGI_MAPPED_RECT struct {
 	Pitch int32
 	PBits uintptr

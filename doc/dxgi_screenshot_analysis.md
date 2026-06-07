@@ -56,6 +56,10 @@ third-party/screenshot
 
 DXGI backend 按 display 捕获整屏，再裁剪出 decoder region。这样可以保留现有 `-r SCREEN:X:Y` 语义，同时避免重写 region 解析和 decode pipeline。
 
+DXGI 的 adapter/output 编号不是 `EnumDisplayMonitors` 暴露的全局屏幕编号。多显示器、虚拟显示器或多 GPU 场景下，直接把 `-r` 的 screen index 当作 `EnumOutputs(index)` 会抓错屏幕。当前实现按 display 的 desktop coordinates 匹配 DXGI output，再用对应 adapter 创建设备，因此 `-r` 编号和 encoder/list-displays 保持一致。
+
+如果 capture rect 比目标屏幕大，例如在 `1920x1080` 屏幕上使用 `RQ=140/160`，rect 会超出屏幕。DXGI backend 会继续抓取目标屏幕内的交集区域，并把屏幕外区域填黑，backend 名称会显示为 `DXGI clipped`。这可以避免性能测试时回退 GDI，但真实传输仍应让 encoder 窗口完整落在屏幕内，否则屏幕外 cell 无法被接收。
+
 ### BGRA 直解
 
 原有 decoder 已支持 BGRA 直解：

@@ -36,6 +36,12 @@ type IDXGIFactory1 struct {
 	vtbl *iDXGIFactory1Vtbl
 }
 
+type OutputTarget struct {
+	Adapter            uint
+	Output             uint
+	DesktopCoordinates RECT
+}
+
 func (obj *IDXGIFactory1) Release() int32 {
 	ret, _, _ := syscall.Syscall(
 		obj.vtbl.Release,
@@ -71,6 +77,53 @@ func _CreateDXGIFactory1(ppFactory **IDXGIFactory1) error {
 	}
 
 	return nil
+}
+
+func FindOutputByDesktopCoordinates(left, top, right, bottom int32) (OutputTarget, error) {
+	var factory1 *IDXGIFactory1
+	if err := _CreateDXGIFactory1(&factory1); err != nil {
+		return OutputTarget{}, fmt.Errorf("CreateDXGIFactory1: %w", err)
+	}
+	defer factory1.Release()
+
+	for adapterIndex := uint(0); ; adapterIndex++ {
+		var adapter *IDXGIAdapter1
+		hr := factory1.EnumAdapters1(adapterIndex, &adapter)
+		if failed(hr) {
+			if HRESULT(hr) == DXGI_ERROR_NOT_FOUND {
+				break
+			}
+			return OutputTarget{}, fmt.Errorf("failed to enumerate desktop adapter %d. %w", adapterIndex, HRESULT(hr))
+		}
+
+		for outputIndex := uint(0); ; outputIndex++ {
+			var output *IDXGIOutput
+			hr := int32(adapter.EnumOutputs(outputIndex, &output))
+			if failed(hr) {
+				if HRESULT(hr) == DXGI_ERROR_NOT_FOUND {
+					break
+				}
+				adapter.Release()
+				return OutputTarget{}, fmt.Errorf("failed to enumerate adapter %d output %d. %w", adapterIndex, outputIndex, HRESULT(hr))
+			}
+
+			var desc DXGI_OUTPUT_DESC
+			hr = output.GetDesc(&desc)
+			output.Release()
+			if failed(hr) {
+				adapter.Release()
+				return OutputTarget{}, fmt.Errorf("failed to describe adapter %d output %d. %w", adapterIndex, outputIndex, HRESULT(hr))
+			}
+			coords := desc.DesktopCoordinates
+			if coords.Left == left && coords.Top == top && coords.Right == right && coords.Bottom == bottom {
+				adapter.Release()
+				return OutputTarget{Adapter: adapterIndex, Output: outputIndex, DesktopCoordinates: coords}, nil
+			}
+		}
+		adapter.Release()
+	}
+
+	return OutputTarget{}, fmt.Errorf("DXGI output not found for desktop coordinates (%d,%d)-(%d,%d)", left, top, right, bottom)
 }
 
 // NewXASession casts your ppv from above to a *XASession
@@ -275,6 +328,17 @@ func (obj *IDXGIDevice1) Release() int32 {
 
 type IDXGIOutput struct {
 	vtbl *iDXGIOutputVtbl
+}
+
+func (obj *IDXGIOutput) GetDesc(desc *DXGI_OUTPUT_DESC) int32 {
+	ret, _, _ := syscall.Syscall(
+		obj.vtbl.GetDesc,
+		2,
+		uintptr(unsafe.Pointer(obj)),
+		uintptr(unsafe.Pointer(desc)),
+		0,
+	)
+	return int32(ret)
 }
 
 func (obj *IDXGIOutput) QueryInterface(iid windows.GUID, pp interface{}) int32 {

@@ -28,6 +28,7 @@ type screenCapturer struct {
 	img          *image.RGBA
 	dxgi         dxshot.ScreenShot
 	display      image.Rectangle
+	clipped      bool
 	lastDXGI     []byte
 }
 
@@ -43,12 +44,13 @@ func newScreenCapturer(rect image.Rectangle) (*screenCapturer, error) {
 		width:  width,
 		height: height,
 	}
-	if displayIndex, bounds, ok := displayForRect(rect); ok {
+	if displayIndex, bounds, clipped, ok := displayForRect(rect); ok {
 		shot := dxshot.NewScreenShot(dxshot.ProviderDXGI)
 		if err := shot.Init(displayIndex); err == nil {
 			shot.DrawCursor(0)
 			c.dxgi = shot
 			c.display = bounds
+			c.clipped = clipped
 			c.img = image.NewRGBA(image.Rect(0, 0, width, height))
 			return c, nil
 		}
@@ -184,6 +186,9 @@ func (c *screenCapturer) Close() error {
 
 func (c *screenCapturer) Name() string {
 	if c.dxgi != nil {
+		if c.clipped {
+			return "DXGI clipped"
+		}
 		return "DXGI"
 	}
 	return "GDI"
@@ -232,27 +237,54 @@ func (c *screenCapturer) capturedBGRAFrame(pix []byte) *capturedScreenFrame {
 }
 
 func (c *screenCapturer) copyDXGIRegion(dst []byte, img *image.RGBA) error {
-	relX := c.rect.Min.X - c.display.Min.X
-	relY := c.rect.Min.Y - c.display.Min.Y
-	if relX < 0 || relY < 0 || relX+c.width > img.Bounds().Dx() || relY+c.height > img.Bounds().Dy() {
-		return fmt.Errorf("%w: DXGI frame %dx%d does not contain capture rect %v within display %v", ErrScreenCapture, img.Bounds().Dx(), img.Bounds().Dy(), c.rect, c.display)
+	overlap := c.rect.Intersect(c.display)
+	if overlap.Empty() {
+		return fmt.Errorf("%w: DXGI frame %dx%d does not overlap capture rect %v within display %v", ErrScreenCapture, img.Bounds().Dx(), img.Bounds().Dy(), c.rect, c.display)
 	}
-	rowBytes := c.width * 4
-	for y := 0; y < c.height; y++ {
-		srcStart := (relY+y)*img.Stride + relX*4
-		copy(dst[y*rowBytes:(y+1)*rowBytes], img.Pix[srcStart:srcStart+rowBytes])
+	if c.clipped {
+		clear(dst)
+	}
+	srcX := overlap.Min.X - c.display.Min.X
+	srcY := overlap.Min.Y - c.display.Min.Y
+	dstX := overlap.Min.X - c.rect.Min.X
+	dstY := overlap.Min.Y - c.rect.Min.Y
+	if srcX < 0 || srcY < 0 || srcX+overlap.Dx() > img.Bounds().Dx() || srcY+overlap.Dy() > img.Bounds().Dy() {
+		return fmt.Errorf("%w: DXGI frame %dx%d does not contain overlap %v within display %v", ErrScreenCapture, img.Bounds().Dx(), img.Bounds().Dy(), overlap, c.display)
+	}
+	rowBytes := overlap.Dx() * 4
+	dstStride := c.width * 4
+	for y := 0; y < overlap.Dy(); y++ {
+		srcStart := (srcY+y)*img.Stride + srcX*4
+		dstStart := (dstY+y)*dstStride + dstX*4
+		copy(dst[dstStart:dstStart+rowBytes], img.Pix[srcStart:srcStart+rowBytes])
 	}
 	return nil
 }
 
-func displayForRect(rect image.Rectangle) (int, image.Rectangle, bool) {
+func displayForRect(rect image.Rectangle) (index int, bounds image.Rectangle, clipped bool, ok bool) {
+	bestIndex := -1
+	var bestBounds image.Rectangle
+	bestArea := 0
 	for i := 0; i < activeDisplayCount(); i++ {
 		bounds := displayBounds(i)
 		if rect.In(bounds) {
-			return i, bounds, true
+			return i, bounds, false, true
+		}
+		overlap := rect.Intersect(bounds)
+		if overlap.Empty() {
+			continue
+		}
+		area := overlap.Dx() * overlap.Dy()
+		if area > bestArea {
+			bestIndex = i
+			bestBounds = bounds
+			bestArea = area
 		}
 	}
-	return 0, image.Rectangle{}, false
+	if bestIndex >= 0 {
+		return bestIndex, bestBounds, true, true
+	}
+	return 0, image.Rectangle{}, false, false
 }
 
 func copyBGRAToRGBA(dst []byte, src unsafe.Pointer, width int, height int) {
