@@ -157,10 +157,63 @@ func (dup *OutputDuplicator) Snapshot2(timeoutMs uint) (unmapFn, *DXGI_MAPPED_RE
 		}
 	}
 
-	// Always copy the complete desktop frame. Partial dirty-rect updates require
-	// a correctly initialized and maintained staging texture; stale pixels are
-	// especially harmful for high color-bit symbol decoding.
-	dup.deviceCtx.CopyResource2D(dup.stagedTex, desktop2d)
+	// NOTE: we could use a single, large []byte buffer and use it as storage for moved rects & dirty rects
+	if frameInfo.TotalMetadataBufferSize > 0 {
+		// Handling moved / dirty rects, to reduce GPU<->CPU memory copying
+		moveRectsRequired := uint32(1)
+		for {
+			if len(dup.movedRects) < int(moveRectsRequired) {
+				dup.movedRects = make([]DXGI_OUTDUPL_MOVE_RECT, moveRectsRequired)
+			}
+			hr = dup.outputDuplication.GetFrameMoveRects(dup.movedRects, &moveRectsRequired)
+			if failed(hr) {
+				if HRESULT(hr) == DXGI_ERROR_MORE_DATA {
+					continue
+				}
+				return nil, nil, nil, fmt.Errorf("failed to GetFrameMoveRects. %w", HRESULT(hr))
+			}
+			dup.movedRects = dup.movedRects[:moveRectsRequired]
+			break
+		}
+
+		dirtyRectsRequired := uint32(1)
+		for {
+			if len(dup.dirtyRects) < int(dirtyRectsRequired) {
+				dup.dirtyRects = make([]RECT, dirtyRectsRequired)
+			}
+			hr = dup.outputDuplication.GetFrameDirtyRects(dup.dirtyRects, &dirtyRectsRequired)
+			if failed(hr) {
+				if HRESULT(hr) == DXGI_ERROR_MORE_DATA {
+					continue
+				}
+				return nil, nil, nil, fmt.Errorf("failed to GetFrameDirtyRects. %w", HRESULT(hr))
+			}
+			dup.dirtyRects = dup.dirtyRects[:dirtyRectsRequired]
+			break
+		}
+
+		box := D3D11_BOX{
+			Front: 0,
+			Back:  1,
+		}
+		if len(dup.movedRects) == 0 {
+			for i := 0; i < len(dup.dirtyRects); i++ {
+				box.Left = uint32(dup.dirtyRects[i].Left)
+				box.Top = uint32(dup.dirtyRects[i].Top)
+				box.Right = uint32(dup.dirtyRects[i].Right)
+				box.Bottom = uint32(dup.dirtyRects[i].Bottom)
+
+				dup.deviceCtx.CopySubresourceRegion2D(dup.stagedTex, 0, box.Left, box.Top, 0, desktop2d, 0, &box)
+			}
+		} else {
+			// TODO: handle moved rects, then dirty rects
+			// for now, just update the whole image instead
+			dup.deviceCtx.CopyResource2D(dup.stagedTex, desktop2d)
+		}
+	} else {
+		// no frame metadata, copy whole image
+		dup.deviceCtx.CopyResource2D(dup.stagedTex, desktop2d)
+	}
 
 	hr = dup.surface.Map(&dup.mappedRect, DXGI_MAP_READ)
 	if failed(hr) {
