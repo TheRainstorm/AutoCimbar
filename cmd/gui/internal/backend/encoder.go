@@ -18,6 +18,7 @@ type EncoderService struct {
 	app   *application.App
 	mu    sync.Mutex
 	tasks map[string]*encoderTask
+	lite  bool
 }
 
 type encoderTask struct {
@@ -27,7 +28,11 @@ type encoderTask struct {
 }
 
 func NewEncoderService() *EncoderService {
-	return &EncoderService{tasks: make(map[string]*encoderTask)}
+	return NewEncoderServiceWithMode(false)
+}
+
+func NewEncoderServiceWithMode(lite bool) *EncoderService {
+	return &EncoderService{tasks: make(map[string]*encoderTask), lite: lite}
 }
 
 func (s *EncoderService) Attach(app *application.App) {
@@ -36,6 +41,9 @@ func (s *EncoderService) Attach(app *application.App) {
 
 func (s *EncoderService) PrepareSend(path string, cfg TransferConfig) (SenderSession, error) {
 	cfg = normalizeConfig(cfg)
+	if s.lite {
+		cfg = EnforceLiteConfig(cfg)
+	}
 	if err := ValidateConfig(cfg); err != nil {
 		return SenderSession{}, err
 	}

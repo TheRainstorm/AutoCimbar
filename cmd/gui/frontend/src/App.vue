@@ -16,6 +16,7 @@ import {
   type TransferConfig,
 } from './runtime/api'
 
+const isLite = import.meta.env.VITE_AUTOCIMBAR_LITE === '1'
 const config = reactive<TransferConfig>({ ...defaultConfig })
 const screens = ref<ScreenInfo[]>([])
 const selectedFile = ref<SelectedFile | null>(null)
@@ -115,7 +116,24 @@ function positionFromPlacement(placement: string): string {
 
 async function loadInitial() {
   Object.assign(config, await ConfigService.getConfig())
+  applyLiteConfig()
   screens.value = await AppService.listScreens()
+}
+
+function applyLiteConfig() {
+  if (!isLite) return
+  if (!config.rq || config.rq < 1) config.rq = 26
+  if (config.rq > 40) config.rq = 40
+  if (!config.scale || config.scale < 1) config.scale = 1
+  config.cell = '8t4s2c'
+  config.ecc = 3
+  config.packets = 1
+  config.fps = 30
+  config.backend = 'symbols'
+  config.captureBackend = 'gdi'
+  config.noZstd = false
+  config.symbols = ''
+  config.decodeWorkers = 0
 }
 
 async function chooseFile() {
@@ -137,6 +155,7 @@ async function minimizeToTray() {
 
 async function startSender() {
   if (!selectedFile.value) return
+  applyLiteConfig()
   await ConfigService.saveConfig({ ...config })
   if (!sender.value || senderState.value !== 'paused') {
     sender.value = await EncoderService.prepareSend(selectedFile.value.path, { ...config })
@@ -164,6 +183,7 @@ async function stopSender() {
 }
 
 async function startReceiver() {
+  applyLiteConfig()
   await ConfigService.saveConfig({ ...config })
   if (!receiver.value || receiverState.value === 'done' || receiverState.value === 'stopped') {
     receiver.value = await DecoderService.prepareReceive({ ...config })
@@ -224,8 +244,8 @@ onMounted(() => {
     <div class="flex min-h-full w-full min-w-0 flex-col gap-3 px-4 py-3">
       <header class="flex items-center justify-between">
         <div>
-          <h1 class="text-lg font-semibold text-white">AutoCimBar</h1>
-          <p class="text-xs text-gray-400">High-speed one-way screen channel file transfer</p>
+          <h1 class="text-lg font-semibold text-white">{{ isLite ? 'AutoCimBar Lite' : 'AutoCimBar' }}</h1>
+          <p class="text-xs text-gray-400">{{ isLite ? 'Simple sender for small screen transfers' : 'High-speed one-way screen channel file transfer' }}</p>
         </div>
         <button class="rounded-lg border border-white/10 bg-gray-800 px-3 py-2 text-xs text-gray-100 shadow-lg transition-all hover:scale-105 hover:bg-gray-700" title="Hide the main window to the system tray." @click="minimizeToTray">
           To Tray
@@ -233,10 +253,10 @@ onMounted(() => {
       </header>
 
       <section class="min-w-0 rounded-xl border border-white/10 bg-gray-900/80 p-3 shadow-lg backdrop-blur-xl">
-        <div class="grid min-w-0 gap-3 md:grid-cols-[100px_1fr_170px_auto]">
+        <div class="grid min-w-0 gap-3" :class="isLite ? 'md:grid-cols-[100px_1fr_90px_170px]' : 'md:grid-cols-[100px_1fr_170px_auto]'">
           <label class="block" :title="tips.rq">
             <span class="text-xs text-gray-400">RQ</span>
-            <input v-model.number="config.rq" type="number" min="1" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" />
+            <input v-model.number="config.rq" type="number" min="1" :max="isLite ? 40 : undefined" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" @change="applyLiteConfig" />
           </label>
           <label class="block" :title="tips.screen">
             <span class="text-xs text-gray-400">Screen</span>
@@ -244,7 +264,7 @@ onMounted(() => {
               <option v-for="screen in screens" :key="screen.index" :value="screen.index">{{ screen.label }}</option>
             </select>
           </label>
-          <label class="block" :title="tips.captureBackend">
+          <label v-if="!isLite" class="block" :title="tips.captureBackend">
             <span class="text-xs text-gray-400">Capture</span>
             <select v-model="config.captureBackend" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400">
               <option value="auto">auto</option>
@@ -252,12 +272,26 @@ onMounted(() => {
               <option value="gdi">gdi</option>
             </select>
           </label>
-          <button class="self-end rounded-lg border border-white/10 bg-gray-800 px-4 py-2 text-sm text-gray-100 shadow-lg transition-all hover:scale-105 hover:bg-gray-700" @click="advancedOpen = !advancedOpen">
+          <label v-if="isLite" class="block" :title="tips.scale">
+            <span class="text-xs text-gray-400">B</span>
+            <input v-model.number="config.scale" type="number" min="1" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" @change="applyLiteConfig" />
+          </label>
+          <label v-if="isLite" class="block" :title="tips.placement">
+            <span class="text-xs text-gray-400">Placement</span>
+            <select v-model="selectedPlacement" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400">
+              <option value="bottom-right">Bottom right</option>
+              <option value="bottom-left">Bottom left</option>
+              <option value="top-right">Top right</option>
+              <option value="top-left">Top left</option>
+              <option value="center">Center</option>
+            </select>
+          </label>
+          <button v-if="!isLite" class="self-end rounded-lg border border-white/10 bg-gray-800 px-4 py-2 text-sm text-gray-100 shadow-lg transition-all hover:scale-105 hover:bg-gray-700" @click="advancedOpen = !advancedOpen">
             Advanced
           </button>
         </div>
 
-        <div class="grid overflow-hidden transition-all duration-300 ease-out" :class="advancedOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'">
+        <div v-if="!isLite" class="grid overflow-hidden transition-all duration-300 ease-out" :class="advancedOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'">
           <div class="min-h-0">
             <div class="mt-3 rounded-xl border border-cyan-300/20 bg-cyan-500/10 p-3 shadow-lg">
               <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-cyan-100">Frame format - both sides must match</div>
@@ -312,8 +346,8 @@ onMounted(() => {
         </div>
       </section>
 
-      <section class="grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <div class="min-w-0 rounded-xl border border-white/10 bg-gray-900/75 p-4 shadow-glow backdrop-blur-xl">
+      <section class="grid min-w-0 grid-cols-1 gap-3" :class="isLite ? 'lg:grid-cols-1' : 'lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]'">
+        <div v-if="!isLite" class="min-w-0 rounded-xl border border-white/10 bg-gray-900/75 p-4 shadow-glow backdrop-blur-xl">
           <div class="mb-3 flex items-center justify-between">
             <div>
               <h2 class="text-lg font-semibold text-white">Sender</h2>

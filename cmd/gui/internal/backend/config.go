@@ -12,10 +12,15 @@ import (
 
 type ConfigService struct {
 	current TransferConfig
+	lite    bool
 }
 
 func NewConfigService() *ConfigService {
-	return &ConfigService{current: LoadDefaultTransferConfig()}
+	return NewConfigServiceWithMode(false)
+}
+
+func NewConfigServiceWithMode(lite bool) *ConfigService {
+	return &ConfigService{current: LoadDefaultTransferConfigForMode(lite), lite: lite}
 }
 
 func (s *ConfigService) GetConfig() TransferConfig {
@@ -24,6 +29,9 @@ func (s *ConfigService) GetConfig() TransferConfig {
 
 func (s *ConfigService) SaveConfig(cfg TransferConfig) (TransferConfig, error) {
 	cfg = normalizeConfig(cfg)
+	if s.lite {
+		cfg = enforceLiteConfig(cfg)
+	}
 	if err := ValidateConfig(cfg); err != nil {
 		return TransferConfig{}, err
 	}
@@ -32,12 +40,16 @@ func (s *ConfigService) SaveConfig(cfg TransferConfig) (TransferConfig, error) {
 }
 
 func (s *ConfigService) ResetConfig() TransferConfig {
-	s.current = LoadDefaultTransferConfig()
+	s.current = LoadDefaultTransferConfigForMode(s.lite)
 	return s.current
 }
 
 func (s *ConfigService) ValidateConfig(cfg TransferConfig) error {
-	return ValidateConfig(normalizeConfig(cfg))
+	cfg = normalizeConfig(cfg)
+	if s.lite {
+		cfg = enforceLiteConfig(cfg)
+	}
+	return ValidateConfig(cfg)
 }
 
 func ValidateConfig(cfg TransferConfig) error {
@@ -156,6 +168,13 @@ func eccValue(cfg TransferConfig) int {
 }
 
 func LoadDefaultTransferConfig() TransferConfig {
+	return LoadDefaultTransferConfigForMode(false)
+}
+
+func LoadDefaultTransferConfigForMode(lite bool) TransferConfig {
+	if lite {
+		return LiteTransferConfig()
+	}
 	cfg := DefaultTransferConfig()
 	values, err := coreapp.LoadINIConfig("gui")
 	if err != nil || len(values) == 0 {
@@ -163,6 +182,40 @@ func LoadDefaultTransferConfig() TransferConfig {
 	}
 	applyConfigValues(&cfg, values)
 	return normalizeConfigForDefaults(cfg)
+}
+
+func EnforceLiteConfig(cfg TransferConfig) TransferConfig {
+	return enforceLiteConfig(cfg)
+}
+
+func enforceLiteConfig(cfg TransferConfig) TransferConfig {
+	lite := LiteTransferConfig()
+	if cfg.RQ <= 0 {
+		cfg.RQ = lite.RQ
+	}
+	if cfg.RQ > LiteMaxRQ {
+		cfg.RQ = LiteMaxRQ
+	}
+	cfg.Q = 0
+	cfg.Cell = lite.Cell
+	cfg.ECC = lite.ECC
+	cfg.Packets = lite.Packets
+	if strings.TrimSpace(cfg.Position) == "" {
+		cfg.Position = lite.Position
+	}
+	if cfg.Scale <= 0 {
+		cfg.Scale = lite.Scale
+	}
+	cfg.FPS = lite.FPS
+	if strings.TrimSpace(cfg.Output) == "" {
+		cfg.Output = lite.Output
+	}
+	cfg.Backend = lite.Backend
+	cfg.SymbolDir = ""
+	cfg.NoZstd = false
+	cfg.DecodeWorkers = 0
+	cfg.CaptureBackend = lite.CaptureBackend
+	return cfg
 }
 
 func normalizeConfigForDefaults(cfg TransferConfig) TransferConfig {

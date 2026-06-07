@@ -122,8 +122,10 @@ async function call<T>(service: string, method: string, fallback: () => T | Prom
   return fallback()
 }
 
+const liteMode = import.meta.env.VITE_AUTOCIMBAR_LITE === '1'
+
 export const defaultConfig: TransferConfig = {
-  rq: 120,
+  rq: liteMode ? 26 : 120,
   q: 120,
   screen: 0,
   cell: '8t4s2c',
@@ -131,13 +133,13 @@ export const defaultConfig: TransferConfig = {
   packets: 1,
   position: '-0:-0',
   scale: 1,
-  fps: 120,
+  fps: liteMode ? 30 : 120,
   output: '.',
   backend: 'symbols',
   symbols: '',
   noZstd: false,
   decodeWorkers: 0,
-  captureBackend: 'auto',
+  captureBackend: liteMode ? 'gdi' : 'auto',
 }
 
 export const AppService = {

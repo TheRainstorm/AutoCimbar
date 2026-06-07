@@ -8,12 +8,12 @@ import (
 	"github.com/autocambar/autocambar/cmd/gui/internal/backend"
 )
 
-//go:embed all:frontend/dist
+//go:embed all:frontend/dist-lite
 var assets embed.FS
 
 //go:embed assets/icon.png
 var appIcon []byte
 
 func main() {
-	backend.RunGUI(false, assets, appIcon)
+	backend.RunGUI(true, assets, appIcon)
 }

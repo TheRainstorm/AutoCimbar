@@ -16,6 +16,7 @@ type DecoderService struct {
 	app   *application.App
 	mu    sync.Mutex
 	tasks map[string]*decoderTask
+	lite  bool
 }
 
 type decoderTask struct {
@@ -26,7 +27,11 @@ type decoderTask struct {
 }
 
 func NewDecoderService() *DecoderService {
-	return &DecoderService{tasks: make(map[string]*decoderTask)}
+	return NewDecoderServiceWithMode(false)
+}
+
+func NewDecoderServiceWithMode(lite bool) *DecoderService {
+	return &DecoderService{tasks: make(map[string]*decoderTask), lite: lite}
 }
 
 func (s *DecoderService) Attach(app *application.App) {
@@ -35,6 +40,9 @@ func (s *DecoderService) Attach(app *application.App) {
 
 func (s *DecoderService) PrepareReceive(cfg TransferConfig) (ReceiverSession, error) {
 	cfg = normalizeConfig(cfg)
+	if s.lite {
+		cfg = EnforceLiteConfig(cfg)
+	}
 	if err := ValidateConfig(cfg); err != nil {
 		return ReceiverSession{}, err
 	}

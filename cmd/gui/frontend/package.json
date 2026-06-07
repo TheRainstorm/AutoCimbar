@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
+    "build:lite": "vue-tsc --noEmit && VITE_AUTOCIMBAR_LITE=1 vite build",
     "preview": "vite preview"
   },
   "dependencies": {

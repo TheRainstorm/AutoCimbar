@@ -33,6 +33,18 @@ type TransferConfig struct {
 	CaptureBackend string `json:"captureBackend"`
 }
 
+const (
+	LiteMaxRQ     = 40
+	LiteDefaultRQ = 26
+	LiteCell      = "8t4s2c"
+	LiteECC       = 3
+	LitePackets   = 1
+	LiteScale     = 1
+	LiteFPS       = 30
+	LiteBackend   = "symbols"
+	LiteCapture   = "gdi"
+)
+
 func DefaultTransferConfig() TransferConfig {
 	ecc := 3
 	return TransferConfig{
@@ -50,6 +62,26 @@ func DefaultTransferConfig() TransferConfig {
 		NoZstd:         false,
 		DecodeWorkers:  0,
 		CaptureBackend: "auto",
+	}
+}
+
+func LiteTransferConfig() TransferConfig {
+	ecc := LiteECC
+	return TransferConfig{
+		RQ:             LiteDefaultRQ,
+		Screen:         0,
+		Cell:           LiteCell,
+		ECC:            &ecc,
+		Packets:        LitePackets,
+		Position:       "-0:-0",
+		Scale:          LiteScale,
+		FPS:            LiteFPS,
+		Output:         ".",
+		Backend:        LiteBackend,
+		SymbolDir:      "",
+		NoZstd:         false,
+		DecodeWorkers:  0,
+		CaptureBackend: LiteCapture,
 	}
 }
 

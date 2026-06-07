@@ -8,7 +8,7 @@ export default defineConfig({
     port: 5173,
   },
   build: {
-    outDir: 'dist',
+    outDir: process.env.VITE_AUTOCIMBAR_LITE === '1' ? '../lite/frontend/dist-lite' : 'dist',
     emptyOutDir: true,
   },
 })
