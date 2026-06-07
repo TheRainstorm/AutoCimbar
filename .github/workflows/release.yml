@@ -35,6 +35,7 @@ jobs:
         run: |
           npm ci
           npm run build
+          npm run build:lite
 
       - name: Test
         run: go test ./...
@@ -49,6 +50,7 @@ jobs:
           go build -trimpath -o dist/windows-amd64/decoder.exe ./cmd/decoder
           go build -trimpath -o dist/windows-amd64/tilegen.exe ./cmd/tilegen
           go build -trimpath -ldflags="-H windowsgui" -o dist/windows-amd64/gui.exe ./cmd/gui
+          go build -trimpath -ldflags="-H windowsgui" -o dist/windows-amd64/guilite.exe ./cmd/gui/lite
           cp README.md README.en.md dist/windows-amd64/
 
       - name: Package

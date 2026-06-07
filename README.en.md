@@ -82,9 +82,12 @@ Windows GUI:
 
 ```bash
 ./bin/gui.exe
+./bin/guilite.exe
 ```
 
 The GUI provides independent Sender and Receiver panels that can run at the same time. The QR/symbol display still uses the native high-performance Windows topmost window. The main UI exposes `RQ`, screen selection, and capture backend; the Advanced panel highlights the frame-format settings that must match on both sides. The GUI reads `[default]` and `[gui]` from `~/.autocimbar`; when `RQ` is absent, old `Q` values are treated as the reference Q. Clicking the window `X` exits the app; clicking `To Tray` hides the dashboard in the system tray, whose menu can show or quit the app.
+
+`guilite.exe` is a simplified sender. It only exposes `RQ`, screen, placement, and `B`. Other parameters are fixed to `capture=gdi`, `cell=8t4s2c`, `ecc=3`, `packets=1`, zstd enabled, and `fps=30`. `RQ` is capped at 40 and defaults to 26.
 
 ## Key Options
 

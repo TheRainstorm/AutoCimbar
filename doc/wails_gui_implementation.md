@@ -23,6 +23,10 @@ Add a Wails v3 desktop GUI for AutoCimBar while preserving the existing high-per
   - Registers services.
   - Configures system tray.
   - Embeds `frontend/dist`.
+- `cmd/gui/lite/main.go`
+  - Wails v3 Lite app bootstrap.
+  - Embeds `cmd/gui/lite/frontend/dist-lite`.
+  - Forces a restricted sender configuration in backend services.
 - `cmd/gui/internal/backend/app.go`
   - System APIs: file dialog, output directory dialog, screen list, autostart, show/hide/quit, tray menu.
 - `cmd/gui/internal/backend/config.go`
@@ -58,6 +62,7 @@ Add a Wails v3 desktop GUI for AutoCimBar while preserving the existing high-per
   - Runtime settings expose `B`, `fps`, and a simplified placement selector: four corners or center.
   - Niche CLI-only parameters such as external symbols and decode workers are no longer shown in the GUI.
   - Each visible setting has a hover tooltip aligned with the command-line help.
+  - Lite build hides receiver and advanced frame-format controls, exposing only `RQ`, screen, placement, and `B`.
   - GUI defaults are loaded from `~/.autocimbar` using `[default]` plus `[gui]`; old `Q` values are accepted as `RQ` when `RQ` is absent.
 - `src/runtime/api.ts`
   - Typed wrapper for Wails services and events.
@@ -101,6 +106,11 @@ Add a Wails v3 desktop GUI for AutoCimBar while preserving the existing high-per
     - Frame-format parameters are highlighted as a single group because mismatches cause decode failure.
     - Raw `X:Y` placement is replaced with four corners plus center in the GUI, while CLI keeps exact coordinates.
     - `symbols` and `decode-workers` remain available in the CLI but are hidden from the GUI.
+14. Added GUI Lite:
+    - Built from the same Vue source with `VITE_AUTOCIMBAR_LITE=1`.
+    - Output is embedded from `cmd/gui/lite/frontend/dist-lite`.
+    - Backend clamps `RQ` to `<= 40` and fixes frame/capture settings to `capture=gdi`, `cell=8t4s2c`, `ecc=3`, `packets=1`, zstd enabled, and `fps=30`.
+    - `B` remains user-adjustable and defaults to `1`.
 
 ## Verification
 
