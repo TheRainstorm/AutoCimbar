@@ -1,5 +1,7 @@
 # AutoCimBar
 
+![AutoCimBar GUI](doc/demo.png)
+
 AutoCimBar 是一个利用远程桌面（或串流画面）的屏幕信道，进行单向文件传输的工具。encoder 把文件编码成屏幕上的高密度彩色符号帧（参考 [cimbar](https://github.com/sz3/cimbar)），decoder 从指定屏幕区域截图并恢复文件。采用喷泉码、ECC 等技术，实现高效的数据传输，目前实测已经突破了梦寐以求的 1MB/s 大关。
 
 [English README](README.en.md)

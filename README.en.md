@@ -1,5 +1,7 @@
 # AutoCimBar
 
+![AutoCimBar GUI](doc/demo.png)
+
 AutoCimBar is a one-way file transfer tool that uses the screen channel of a remote desktop or game-streaming session. The encoder renders a file as high-density colored symbol frames on screen, inspired by [cimbar](https://github.com/sz3/cimbar), and the decoder captures a configured screen region to recover the file. It combines fountain coding, ECC, packet CRC, compression, and file-level MD5 verification. Current real-world tests have already broken the long-awaited 1 MB/s barrier.
 
 [中文 README](README.md)
