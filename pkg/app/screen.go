@@ -40,24 +40,26 @@ type ScreenEncodeConfig struct {
 }
 
 type ScreenDecodeConfig struct {
-	OutputPath      string
-	Backend         string
-	GridSize        int
-	Scale           int
-	SymbolDir       string
-	BlockSize       int
-	ECCPercent      int
-	ColorBits       int
-	ShapeBits       int
-	Tile            string
-	PacketsPerFrame int
-	Region          string
-	FPS             int
-	DecodeWorkers   int
-	Timeout         time.Duration
-	Progress        io.Writer
-	Stop            <-chan struct{}
-	Pause           <-chan bool
+	OutputPath       string
+	Backend          string
+	GridSize         int
+	Scale            int
+	SymbolDir        string
+	BlockSize        int
+	ECCPercent       int
+	ColorBits        int
+	ShapeBits        int
+	Tile             string
+	PacketsPerFrame  int
+	Region           string
+	FPS              int
+	DecodeWorkers    int
+	CaptureBackend   string
+	DebugCapturePath string
+	Timeout          time.Duration
+	Progress         io.Writer
+	Stop             <-chan struct{}
+	Pause            <-chan bool
 }
 
 var ErrStopped = errors.New("operation stopped")
@@ -305,7 +307,7 @@ func DecodeScreenToPath(cfg ScreenDecodeConfig) (*WriteSourceResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	capturer, err := newScreenCapturer(rect)
+	capturer, err := newScreenCapturer(rect, cfg.CaptureBackend)
 	if err != nil {
 		return nil, err
 	}
@@ -329,7 +331,7 @@ func DecodeScreenToPath(cfg ScreenDecodeConfig) (*WriteSourceResult, error) {
 	captureErr := make(chan error, 1)
 	stopCapture := make(chan struct{})
 	captureDone := make(chan struct{})
-	go runScreenCaptureLoop(capturer, interval, progress, frames, freeBuffers, captureErr, stopCapture, isPaused, captureDone)
+	go runScreenCaptureLoop(capturer, interval, progress, frames, freeBuffers, captureErr, stopCapture, isPaused, cfg.DebugCapturePath, captureDone)
 	decodeDone := make(chan struct{})
 	go runScreenDecodeWorkers(decoders, frames, decodedFrames, freeBuffers, progress, stopCapture, isPaused, decodeDone)
 	defer func() {
@@ -484,10 +486,11 @@ func stopTimer(timer *time.Timer) {
 	}
 }
 
-func runScreenCaptureLoop(capturer *screenCapturer, interval time.Duration, progress *screenDecoderProgress, frames chan *capturedScreenFrame, freeBuffers chan []byte, captureErr chan<- error, stop <-chan struct{}, isPaused func() bool, done chan<- struct{}) {
+func runScreenCaptureLoop(capturer *screenCapturer, interval time.Duration, progress *screenDecoderProgress, frames chan *capturedScreenFrame, freeBuffers chan []byte, captureErr chan<- error, stop <-chan struct{}, isPaused func() bool, debugCapturePath string, done chan<- struct{}) {
 	defer close(done)
 	nextCapture := time.Now()
 	var buf []byte
+	debugSaved := debugCapturePath == ""
 	for {
 		if !waitWhilePaused(isPaused, stop) {
 			return
@@ -524,6 +527,20 @@ func runScreenCaptureLoop(capturer *screenCapturer, interval time.Duration, prog
 			return
 		}
 		progress.noteCaptured()
+		if !debugSaved {
+			if err := saveCapturedFramePNG(debugCapturePath, frame); err != nil {
+				select {
+				case captureErr <- fmt.Errorf("save debug capture: %w", err):
+				default:
+				}
+				recycleCapturedFrame(frame, freeBuffers)
+				return
+			}
+			debugSaved = true
+			if progress.out != nil {
+				fmt.Fprintf(progress.out, "debug capture saved: %s\n", debugCapturePath)
+			}
+		}
 
 		select {
 		case frames <- frame:

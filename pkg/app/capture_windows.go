@@ -32,11 +32,15 @@ type screenCapturer struct {
 	lastDXGI     []byte
 }
 
-func newScreenCapturer(rect image.Rectangle) (*screenCapturer, error) {
+func newScreenCapturer(rect image.Rectangle, backend string) (*screenCapturer, error) {
 	width := rect.Dx()
 	height := rect.Dy()
 	if width <= 0 || height <= 0 {
 		return nil, errors.New("capture rect must have positive size")
+	}
+	backend, err := normalizeCaptureBackend(backend)
+	if err != nil {
+		return nil, err
 	}
 
 	c := &screenCapturer{
@@ -44,17 +48,30 @@ func newScreenCapturer(rect image.Rectangle) (*screenCapturer, error) {
 		width:  width,
 		height: height,
 	}
-	if displayIndex, bounds, clipped, ok := displayForRect(rect); ok {
-		shot := dxshot.NewScreenShot(dxshot.ProviderDXGI)
-		if err := shot.Init(displayIndex); err == nil {
-			shot.DrawCursor(0)
-			c.dxgi = shot
-			c.display = bounds
-			c.clipped = clipped
-			c.img = image.NewRGBA(image.Rect(0, 0, width, height))
-			return c, nil
+	if backend != CaptureBackendGDI {
+		displayIndex, bounds, clipped, ok := displayForRect(rect)
+		if !ok {
+			if backend == CaptureBackendDXGI {
+				return nil, fmt.Errorf("no display overlaps capture rect %v", rect)
+			}
+		} else {
+			shot := dxshot.NewScreenShot(dxshot.ProviderDXGI)
+			if err := shot.Init(displayIndex); err == nil {
+				shot.DrawCursor(0)
+				c.dxgi = shot
+				c.display = bounds
+				c.clipped = clipped
+				c.img = image.NewRGBA(image.Rect(0, 0, width, height))
+				return c, nil
+			} else if backend == CaptureBackendDXGI {
+				shot.Release()
+				return nil, err
+			}
+			shot.Release()
+			if backend == CaptureBackendDXGI {
+				return nil, errors.New("DXGI capture init failed")
+			}
 		}
-		shot.Release()
 	}
 
 	if err := c.initGDI(); err != nil {

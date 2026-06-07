@@ -14,7 +14,10 @@ type screenCapturer struct {
 	rect image.Rectangle
 }
 
-func newScreenCapturer(rect image.Rectangle) (*screenCapturer, error) {
+func newScreenCapturer(rect image.Rectangle, backend string) (*screenCapturer, error) {
+	if _, err := normalizeCaptureBackend(backend); err != nil {
+		return nil, err
+	}
 	return &screenCapturer{rect: rect}, nil
 }
 

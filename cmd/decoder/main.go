@@ -30,6 +30,8 @@ func main() {
 	fps := flag.Int("fps", 120, "screen capture rate")
 	fpsShort := flag.Int("f", 0, "short alias for -fps")
 	decodeWorkers := flag.Int("decode-workers", 0, "parallel screen decode workers, 0 chooses automatically")
+	captureBackend := flag.String("capture-backend", app.CaptureBackendAuto, "screen capture backend: auto, dxgi, or gdi")
+	debugCapture := flag.String("debug-capture", "", "save the first captured decoder frame to this PNG path")
 	listDisplays := flag.Bool("list-displays", false, "list detected display indexes and bounds")
 	symbolDir := flag.String("symbols", app.DefaultSymbolDir, "optional directory containing symbol PNG files named 00.png..; empty uses built-in symbols")
 	symbolDirShort := flag.String("s", "", "short alias for -symbols")
@@ -82,22 +84,24 @@ func main() {
 			fmt.Fprintf(os.Stderr, "invalid grid size: %v\n", err)
 			os.Exit(1)
 		}
-		printRuntimeConfig(os.Stderr, "screen", *input, *output, *backend, *q, *rq, gridSize, *b, *tile, *shapeBits, *colorBits, *cell, *eccPercent, *packetsPerFrame, *region, *fps, *symbolDir, *decodeWorkers)
+		printRuntimeConfig(os.Stderr, "screen", *input, *output, *backend, *q, *rq, gridSize, *b, *tile, *shapeBits, *colorBits, *cell, *eccPercent, *packetsPerFrame, *region, *fps, *symbolDir, *decodeWorkers, *captureBackend, *debugCapture)
 		writeResult, err := app.DecodeScreenToPath(app.ScreenDecodeConfig{
-			OutputPath:      *output,
-			Backend:         *backend,
-			GridSize:        gridSize,
-			Scale:           *b,
-			SymbolDir:       *symbolDir,
-			ECCPercent:      *eccPercent,
-			ColorBits:       *colorBits,
-			ShapeBits:       *shapeBits,
-			Tile:            *tile,
-			PacketsPerFrame: *packetsPerFrame,
-			Region:          *region,
-			FPS:             *fps,
-			DecodeWorkers:   *decodeWorkers,
-			Progress:        os.Stderr,
+			OutputPath:       *output,
+			Backend:          *backend,
+			GridSize:         gridSize,
+			Scale:            *b,
+			SymbolDir:        *symbolDir,
+			ECCPercent:       *eccPercent,
+			ColorBits:        *colorBits,
+			ShapeBits:        *shapeBits,
+			Tile:             *tile,
+			PacketsPerFrame:  *packetsPerFrame,
+			Region:           *region,
+			FPS:              *fps,
+			DecodeWorkers:    *decodeWorkers,
+			CaptureBackend:   *captureBackend,
+			DebugCapturePath: *debugCapture,
+			Progress:         os.Stderr,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "screen decoder failed: %v\n", err)
@@ -122,7 +126,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "invalid grid size: %v\n", err)
 		os.Exit(1)
 	}
-	printRuntimeConfig(os.Stderr, "png", *input, *output, *backend, *q, *rq, gridSize, *b, *tile, *shapeBits, *colorBits, *cell, *eccPercent, *packetsPerFrame, *region, *fps, *symbolDir, *decodeWorkers)
+	printRuntimeConfig(os.Stderr, "png", *input, *output, *backend, *q, *rq, gridSize, *b, *tile, *shapeBits, *colorBits, *cell, *eccPercent, *packetsPerFrame, *region, *fps, *symbolDir, *decodeWorkers, *captureBackend, *debugCapture)
 	writeResult, err := app.DecodePNGFramesToPathWithBackend(*input, *output, gridSize, *b, *symbolDir, 0, *eccPercent, *colorBits, spec, *backend)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "decoder failed: %v\n", err)
@@ -137,12 +141,12 @@ func main() {
 	fmt.Printf("decoded %s -> %s, md5=%s\n", *input, writeResult.OutputPath, md5)
 }
 
-func printRuntimeConfig(out *os.File, mode string, input string, output string, backend string, q int, rq int, gridSize int, scale int, tile string, shapeBits int, colorBits int, cell string, ecc int, packets int, region string, fps int, symbols string, decodeWorkers int) {
+func printRuntimeConfig(out *os.File, mode string, input string, output string, backend string, q int, rq int, gridSize int, scale int, tile string, shapeBits int, colorBits int, cell string, ecc int, packets int, region string, fps int, symbols string, decodeWorkers int, captureBackend string, debugCapture string) {
 	if cell == "" {
 		cell = fmt.Sprintf("%st%ds%dc", tile, shapeBits, colorBits)
 	}
-	fmt.Fprintf(out, "decoder config: mode=%s input=%q output=%q backend=%s Q=%d RQ=%d resolved_Q=%d B=%d cell=%s tile=%s shape_bits=%d color_bits=%d ecc=%d packets=%d region=%s fps=%d symbols=%q decode_workers=%d\n",
-		mode, input, output, backend, q, rq, gridSize, scale, cell, tile, shapeBits, colorBits, ecc, packets, region, fps, symbols, decodeWorkers)
+	fmt.Fprintf(out, "decoder config: mode=%s input=%q output=%q backend=%s Q=%d RQ=%d resolved_Q=%d B=%d cell=%s tile=%s shape_bits=%d color_bits=%d ecc=%d packets=%d region=%s fps=%d symbols=%q decode_workers=%d capture_backend=%s debug_capture=%q\n",
+		mode, input, output, backend, q, rq, gridSize, scale, cell, tile, shapeBits, colorBits, ecc, packets, region, fps, symbols, decodeWorkers, captureBackend, debugCapture)
 }
 
 func shortAliases() map[string][]string {
