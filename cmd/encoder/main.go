@@ -91,6 +91,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "invalid grid size: %v\n", err)
 			os.Exit(1)
 		}
+		printRuntimeConfig(os.Stderr, "screen", *input, "", *addr, *backend, *q, *rq, gridSize, *b, *tile, *shapeBits, *colorBits, *cell, *eccPercent, *packetsPerFrame, *region, *fps, *symbolDir, *noZstd, *redundancy)
 		if runtime.GOOS == "windows" {
 			fmt.Println("screen encoder opening native Windows window")
 		} else {
@@ -135,6 +136,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "invalid grid size: %v\n", err)
 		os.Exit(1)
 	}
+	printRuntimeConfig(os.Stderr, "png", *input, *outputDir, "", *backend, *q, *rq, gridSize, *b, *tile, *shapeBits, *colorBits, *cell, *eccPercent, *packetsPerFrame, *region, *fps, *symbolDir, *noZstd, *redundancy)
 	result, err := app.EncodeFileToPNGFramesWithBackend(*input, *outputDir, gridSize, *b, *symbolDir, *redundancy, 0, *eccPercent, !*noZstd, *colorBits, spec, *backend)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "encoder failed: %v\n", err)
@@ -146,6 +148,14 @@ func main() {
 	fmt.Printf("Q=%d B=%d tile=%dx%d shape_bits=%d color_bits=%d cell_bits=%d cell=%dpx image=%dx%dpx payload=%d bytes/frame block=%d bytes ecc=%d%% parity=%d bytes packet=%d bytes\n",
 		result.GridSize, result.Scale, result.TileWidth, result.TileHeight, result.ShapeBits, result.ColorBits, result.ShapeBits+result.ColorBits, result.CellSize, result.ImageSize, result.ImageSize, result.PayloadCapacity, result.BlockSize, result.ECCPercent, result.ECCBytes, result.PacketBytes)
 	fmt.Printf("output: %s\n", *outputDir)
+}
+
+func printRuntimeConfig(out *os.File, mode string, input string, outputDir string, addr string, backend string, q int, rq int, gridSize int, scale int, tile string, shapeBits int, colorBits int, cell string, ecc int, packets int, region string, fps int, symbols string, noZstd bool, redundancy int) {
+	if cell == "" {
+		cell = fmt.Sprintf("%st%ds%dc", tile, shapeBits, colorBits)
+	}
+	fmt.Fprintf(out, "encoder config: mode=%s input=%q output=%q backend=%s Q=%d RQ=%d resolved_Q=%d B=%d cell=%s tile=%s shape_bits=%d color_bits=%d ecc=%d packets=%d region=%s fps=%d symbols=%q zstd=%t redundancy=%d open_addr=%q\n",
+		mode, input, outputDir, backend, q, rq, gridSize, scale, cell, tile, shapeBits, colorBits, ecc, packets, region, fps, symbols, !noZstd, redundancy, addr)
 }
 
 func shortAliases() map[string][]string {
