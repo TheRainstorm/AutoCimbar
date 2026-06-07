@@ -346,8 +346,8 @@ onMounted(() => {
         </div>
       </section>
 
-      <section class="grid min-w-0 grid-cols-1 gap-3" :class="isLite ? 'lg:grid-cols-1' : 'lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]'">
-        <div v-if="!isLite" class="min-w-0 rounded-xl border border-white/10 bg-gray-900/75 p-4 shadow-glow backdrop-blur-xl">
+      <section class="grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div class="min-w-0 rounded-xl border border-white/10 bg-gray-900/75 p-4 shadow-glow backdrop-blur-xl">
           <div class="mb-3 flex items-center justify-between">
             <div>
               <h2 class="text-lg font-semibold text-white">Sender</h2>

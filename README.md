@@ -87,7 +87,7 @@ Windows GUI:
 
 GUI 提供 Sender 和 Receiver 两个独立面板，可以同时发送和接收；二维码/符号显示仍沿用原生 Windows 高性能置顶窗口。主界面暴露 `RQ`、屏幕选择和截图后端；Advanced 面板把必须两端一致的“帧格式”参数用高亮分组展示。GUI 会读取 `~/.autocimbar` 的 `[default]` 和 `[gui]` 配置；未写 `RQ` 时会兼容旧的 `Q` 值。点击窗口 `X` 会退出程序；点击 `To Tray` 会最小化到系统托盘，托盘菜单可显示或退出程序。
 
-`guilite.exe` 是简化发送端，只保留 `RQ`、屏幕、位置和 `B`。其它参数固定为 `capture=gdi`、`cell=8t4s2c`、`ecc=3`、`packets=1`、启用 zstd、`fps=30`，`RQ` 最大为 40，默认 26。
+`guilite.exe` 是简化版 GUI，仍包含 Sender 和 Receiver，只保留 `RQ`、屏幕、位置和 `B`。其它参数固定为 `capture=gdi`、`cell=8t4s2c`、`ecc=3`、`packets=1`、启用 zstd、`fps=30`，`RQ` 最大为 40，默认 26。
 
 ## 关键参数
 
