@@ -51,12 +51,25 @@ third-party/screenshot
 `pkg/app/capture_windows.go` 现在按如下顺序初始化：
 
 1. 根据 decoder region 找到其所属 display。
-2. 优先初始化 `ProviderDXGI`。
+2. 当 `-capture-backend auto` 或 `-capture-backend dxgi` 时初始化 `ProviderDXGI`。
 3. 如果 DXGI 初始化失败，自动回退到原 GDI `BitBlt` capturer。
+
+也可以显式指定：
+
+```bash
+./bin/decoder.exe -capture-backend dxgi
+./bin/decoder.exe -capture-backend gdi
+```
+
+DXGI 已作为正式截图后端保留。它通常显著快于 GDI，但在 HDR 或系统颜色管理开启的显示器上，Desktop Duplication 读出的颜色可能与 GDI/屏幕最终显示颜色不一致，高 color-bit 模式可能无法稳定解码。此时应切换到 SDR 显示器，或使用 `-capture-backend gdi` 换取颜色一致性。
 
 DXGI backend 按 display 捕获整屏，再裁剪出 decoder region。这样可以保留现有 `-r SCREEN:X:Y` 语义，同时避免重写 region 解析和 decode pipeline。
 
 DXGI 的 adapter/output 编号不是 `EnumDisplayMonitors` 暴露的全局屏幕编号。多显示器、虚拟显示器或多 GPU 场景下，直接把 `-r` 的 screen index 当作 `EnumOutputs(index)` 会抓错屏幕。当前实现按 display 的 desktop coordinates 匹配 DXGI output，再用对应 adapter 创建设备，因此 `-r` 编号和 encoder/list-displays 保持一致。
+
+### 旋转屏坐标
+
+DXGI output 在竖屏场景下可能返回未旋转的 landscape surface，例如 Windows/GDI 看到 `2160x3840`，DXGI surface 实际是 `3840x2160`。项目会读取 `DXGI_OUTPUT_DESC.Rotation`，并把 DXGI surface 坐标映射回 Windows/GDI 的桌面坐标系。这样 `-r SCREEN:X:Y` 在 GDI 和 DXGI 后端下保持同一语义。
 
 如果 capture rect 比目标屏幕大，例如在 `1920x1080` 屏幕上使用 `RQ=140/160`，rect 会超出屏幕。DXGI backend 会继续抓取目标屏幕内的交集区域，并把屏幕外区域填黑，backend 名称会显示为 `DXGI clipped`。这可以避免性能测试时回退 GDI，但真实传输仍应让 encoder 窗口完整落在屏幕内，否则屏幕外 cell 无法被接收。
 
@@ -92,6 +105,7 @@ decoder 需要在 encoder 尚未启动时持续等待，因此 Windows DXGI capt
 - display 实际刷新率。
 - decoder region 大小。
 - DXGI 整屏捕获后裁剪的内存 copy 成本。
+- 显示器是否为 HDR/color-managed 路径；这会影响颜色准确性，不一定影响 capture fps。
 
 ## 后续优化点
 

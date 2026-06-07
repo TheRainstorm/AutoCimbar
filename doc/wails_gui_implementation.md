@@ -52,8 +52,12 @@ Add a Wails v3 desktop GUI for AutoCimBar while preserving the existing high-per
 - `src/App.vue`
   - Dark glassmorphism dashboard.
   - Sender and Receiver panels run side by side.
-  - Main UI only exposes `RQ` and screen selection.
-  - Advanced settings accordion exposes `cell`, `ecc`, `packets`, `B`, `X:Y`, `fps`, backend, symbols, zstd, and decode workers.
+  - Main UI exposes `RQ`, screen selection, and receiver capture backend.
+  - Advanced settings accordion separates frame-format settings from runtime settings.
+  - Frame-format settings are visually grouped and must match on both sides: backend, cell, ECC, packets, and zstd.
+  - Runtime settings expose `B`, `fps`, and a simplified placement selector: four corners or center.
+  - Niche CLI-only parameters such as external symbols and decode workers are no longer shown in the GUI.
+  - Each visible setting has a hover tooltip aligned with the command-line help.
   - GUI defaults are loaded from `~/.autocimbar` using `[default]` plus `[gui]`; old `Q` values are accepted as `RQ` when `RQ` is absent.
 - `src/runtime/api.ts`
   - Typed wrapper for Wails services and events.
@@ -89,6 +93,14 @@ Add a Wails v3 desktop GUI for AutoCimBar while preserving the existing high-per
     - `cmd/gui/assets/icon.png` is embedded through `application.Options.Icon` and used by the system tray.
     - `cmd/gui/assets/icon.ico` is compiled into `cmd/gui/rsrc_windows_amd64.syso` so `gui.exe` has a native Windows file/taskbar icon.
     - `.github/workflows/release.yml` builds Windows amd64 CLI and GUI binaries when a `v*` tag is pushed, then uploads a zip and SHA256 file to GitHub Releases.
+12. Promoted DXGI to a first-class receiver capture backend:
+    - CLI exposes `-capture-backend auto|dxgi|gdi`.
+    - GUI exposes the same backend choice in the main settings row.
+    - Help and tooltips document that DXGI is fastest but HDR/color-managed displays can break high color-bit modes.
+13. Refined GUI configuration:
+    - Frame-format parameters are highlighted as a single group because mismatches cause decode failure.
+    - Raw `X:Y` placement is replaced with four corners plus center in the GUI, while CLI keeps exact coordinates.
+    - `symbols` and `decode-workers` remain available in the CLI but are hidden from the GUI.
 
 ## Verification
 

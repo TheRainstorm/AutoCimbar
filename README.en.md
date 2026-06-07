@@ -84,24 +84,39 @@ Windows GUI:
 ./bin/gui.exe
 ```
 
-The GUI provides independent Sender and Receiver panels that can run at the same time. The QR/symbol display still uses the native high-performance Windows topmost window. The main UI exposes only `RQ` and screen selection; advanced transfer parameters live in the Advanced panel. The GUI reads `[default]` and `[gui]` from `~/.autocimbar`; when `RQ` is absent, old `Q` values are treated as the reference Q. Clicking the window `X` exits the app; clicking `To Tray` hides the dashboard in the system tray, whose menu can show or quit the app.
+The GUI provides independent Sender and Receiver panels that can run at the same time. The QR/symbol display still uses the native high-performance Windows topmost window. The main UI exposes `RQ`, screen selection, and capture backend; the Advanced panel highlights the frame-format settings that must match on both sides. The GUI reads `[default]` and `[gui]` from `~/.autocimbar`; when `RQ` is absent, old `Q` values are treated as the reference Q. Clicking the window `X` exits the app; clicking `To Tray` hides the dashboard in the system tray, whose menu can show or quit the app.
 
-## Common Options
+## Key Options
+
+Frame format options, which must match on encoder and decoder:
+
+```text
+-backend        symbols or qr, default symbols
+-c, -cell       compact cell spec, default 8t4s2c
+-ecc            per-frame Reed-Solomon ECC percentage, default 3
+-p, -packets    independent packets per frame
+-no-zstd        encoder disables default zstd compression; decoder detects compression from source metadata
+```
+
+Runtime options:
 
 ```text
 -i              input file; in decoder PNG mode, input frame directory
 -o              output path; in encoder PNG mode, output frame directory; decoder defaults to current directory and uses the sender file name for directory output
--Q              grid/cell count; QR backend maps it to a QR version
 -RQ             reference Q for 8x8 tiles; smaller tiles auto-scale actual Q
+-Q              raw grid/cell count; RQ takes precedence when set
 -B              cell scale
--c, -cell       compact cell spec, default 8t4s2c
--p, -packets    independent packets per frame
--ecc            per-frame Reed-Solomon ECC percentage, default 3
 -f, -fps        display or capture FPS, default 120
 -r, -R          screen region: SCREEN, X:Y, or SCREEN:X:Y
 -png            PNG frame mode; default is screen mode
--backend        symbols or qr, default symbols
--no-zstd        disable default zstd compression
+-list-displays  list display indexes and bounds
+```
+
+Decoder capture backend options:
+
+```text
+-capture-backend auto|dxgi|gdi, default auto. DXGI is fastest, but HDR/color-managed displays can break high color-bit modes; use an SDR display or gdi when colors do not decode.
+-debug-capture   output directory for the first 60 captured frames, named <cell>_NNN.png; missing directories are created
 -symbols        external symbol PNG directory; empty uses embedded symbols
 ```
 
@@ -163,9 +178,10 @@ r = 0
 
 [decoder]
 r = 1
+capture-backend = auto
 ```
 
-Config keys use command-line option names such as `RQ`, `cell`, `packets`, and `color-bits`; underscores are treated as dashes.
+Config keys use command-line option names such as `RQ`, `cell`, `packets`, and `capture-backend`; underscores are treated as dashes.
 
 ## QR Backend `-Q`
 

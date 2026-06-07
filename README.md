@@ -84,26 +84,39 @@ Windows GUI:
 ./bin/gui.exe
 ```
 
-GUI 提供 Sender 和 Receiver 两个独立面板，可以同时发送和接收；二维码/符号显示仍沿用原生 Windows 高性能置顶窗口。主界面只暴露 `RQ` 和屏幕选择，高级参数在 Advanced 面板中配置。GUI 会读取 `~/.autocimbar` 的 `[default]` 和 `[gui]` 配置；未写 `RQ` 时会兼容旧的 `Q` 值。点击窗口 `X` 会退出程序；点击 `To Tray` 会最小化到系统托盘，托盘菜单可显示或退出程序。
+GUI 提供 Sender 和 Receiver 两个独立面板，可以同时发送和接收；二维码/符号显示仍沿用原生 Windows 高性能置顶窗口。主界面暴露 `RQ`、屏幕选择和截图后端；Advanced 面板把必须两端一致的“帧格式”参数用高亮分组展示。GUI 会读取 `~/.autocimbar` 的 `[default]` 和 `[gui]` 配置；未写 `RQ` 时会兼容旧的 `Q` 值。点击窗口 `X` 会退出程序；点击 `To Tray` 会最小化到系统托盘，托盘菜单可显示或退出程序。
 
 ## 关键参数
 
-常用参数：
+帧格式参数，encoder 和 decoder 必须一致：
+
+```text
+-backend        symbols 或 qr，默认 symbols
+-c, -cell       紧凑 cell 规格，默认 8t4s2c
+-ecc            单帧 Reed-Solomon ECC 百分比，默认 3
+-p, -packets    每帧独立 packet 数
+-no-zstd        encoder 关闭默认 zstd 压缩；decoder 从源数据头自动识别
+```
+
+运行参数：
 
 ```text
 -i              输入文件；decoder PNG 模式下为帧目录
 -o              输出路径；encoder PNG 模式下为帧目录；decoder 默认当前目录，目录输出时使用发送端文件名
--Q              grid/cell 数；QR backend 下映射为 QR version
 -RQ             以 8x8 tile 为基准的参考 Q，tile 变小时自动增大实际 Q
+-Q              原始 grid/cell 数；设置 RQ 时优先使用 RQ
 -B              cell 缩放倍数
--c, -cell       紧凑 cell 规格，默认 8t4s2c
--p, -packets    每帧独立 packet 数
--ecc            单帧 Reed-Solomon ECC 百分比，默认 3
 -f, -fps        播放或截图帧率，默认 120
 -r, -R          屏幕区域，格式 SCREEN、X:Y 或 SCREEN:X:Y
 -png            使用 PNG 帧模式；默认是屏幕模式
--backend        symbols 或 qr，默认 symbols
--no-zstd        关闭默认 zstd 压缩
+-list-displays  查看屏幕编号和范围
+```
+
+decoder 截图后端参数：
+
+```text
+-capture-backend auto|dxgi|gdi，默认 auto。DXGI 速度最高，但 HDR/系统颜色管理可能破坏高 color-bit 模式；遇到颜色识别失败时请使用 SDR 屏幕或切到 gdi。
+-debug-capture   指定目录，保存前 60 张截图为 <cell>_NNN.png；目录不存在会自动创建
 -symbols        外部 symbol PNG 目录；为空时使用内置符号
 ```
 
@@ -165,9 +178,10 @@ r = 0
 
 [decoder]
 r = 1
+capture-backend = auto
 ```
 
-配置 key 使用命令行参数名即可，例如 `RQ`、`cell`、`packets`、`color-bits`；下划线会按短横线处理。
+配置 key 使用命令行参数名即可，例如 `RQ`、`cell`、`packets`、`capture-backend`；下划线会按短横线处理。
 
 ## QR backend 的 -Q 含义
 
