@@ -16,6 +16,7 @@ type DXGIScreenshot struct {
 	display   int //截取哪个屏幕
 	cursor    int32
 	bgra      *image.RGBA
+	rotation  uint32
 }
 
 func NewDXGIScreenshot() *DXGIScreenshot {
@@ -34,6 +35,7 @@ func (s *DXGIScreenshot) Init(display int) error {
 	if err != nil {
 		return err
 	}
+	s.rotation = target.Rotation
 	s.device, s.deviceCtx, err = d3d.NewD3D11DeviceForAdapter(target.Adapter)
 	if err != nil {
 		return err
@@ -124,6 +126,12 @@ func (s *DXGIScreenshot) GetDisplayId() int {
 }
 func (s *DXGIScreenshot) GetCaptureName() string {
 	return "DXGI"
+}
+func (s *DXGIScreenshot) GetRotation() uint32 {
+	if s.rotation == 0 {
+		return 1
+	}
+	return s.rotation
 }
 func (s *DXGIScreenshot) DrawCursor(cursor int32) {
 	atomic.StoreInt32(&s.cursor, cursor)

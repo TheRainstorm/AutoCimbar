@@ -40,6 +40,7 @@ type OutputTarget struct {
 	Adapter            uint
 	Output             uint
 	DesktopCoordinates RECT
+	Rotation           uint32
 }
 
 func (obj *IDXGIFactory1) Release() int32 {
@@ -117,7 +118,7 @@ func FindOutputByDesktopCoordinates(left, top, right, bottom int32) (OutputTarge
 			coords := desc.DesktopCoordinates
 			if coords.Left == left && coords.Top == top && coords.Right == right && coords.Bottom == bottom {
 				adapter.Release()
-				return OutputTarget{Adapter: adapterIndex, Output: outputIndex, DesktopCoordinates: coords}, nil
+				return OutputTarget{Adapter: adapterIndex, Output: outputIndex, DesktopCoordinates: coords, Rotation: desc.Rotation}, nil
 			}
 		}
 		adapter.Release()

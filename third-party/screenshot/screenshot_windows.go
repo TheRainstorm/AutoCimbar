@@ -364,6 +364,9 @@ func (s *GDIScreenshot) GetDisplayId() int {
 func (s *GDIScreenshot) GetCaptureName() string {
 	return "GDI"
 }
+func (s *GDIScreenshot) GetRotation() uint32 {
+	return 1
+}
 
 func (s *GDIScreenshot) DrawCursor(cursor int32) {
 	atomic.StoreInt32(&s.cursor, cursor)

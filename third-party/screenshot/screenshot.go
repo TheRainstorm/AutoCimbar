@@ -32,6 +32,8 @@ type ScreenShot interface {
 	GetDisplayId() int
 	// GetCaptureName 当前截图方法，GDI、DXGI
 	GetCaptureName() string
+	// GetRotation 返回 DXGI_MODE_ROTATION 值；GDI 返回 1 表示不旋转。
+	GetRotation() uint32
 	// Capture 截一张屏幕全图并用swizzle尝试使用simd方式转化为RGBA
 	Capture() (*image.RGBA, error)
 	// CaptureBGRA 截一张屏幕全图，不转换直接输出BGRA颜色格式

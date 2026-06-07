@@ -30,6 +30,7 @@ type screenCapturer struct {
 	display      image.Rectangle
 	clipped      bool
 	lastDXGI     []byte
+	dxgiRotation uint32
 }
 
 func newScreenCapturer(rect image.Rectangle, backend string) (*screenCapturer, error) {
@@ -61,6 +62,7 @@ func newScreenCapturer(rect image.Rectangle, backend string) (*screenCapturer, e
 				c.dxgi = shot
 				c.display = bounds
 				c.clipped = clipped
+				c.dxgiRotation = shot.GetRotation()
 				c.img = image.NewRGBA(image.Rect(0, 0, width, height))
 				return c, nil
 			} else if backend == CaptureBackendDXGI {
@@ -204,9 +206,9 @@ func (c *screenCapturer) Close() error {
 func (c *screenCapturer) Name() string {
 	if c.dxgi != nil {
 		if c.clipped {
-			return "DXGI clipped"
+			return fmt.Sprintf("DXGI clipped rotation=%d", c.dxgiRotation)
 		}
-		return "DXGI"
+		return fmt.Sprintf("DXGI rotation=%d", c.dxgiRotation)
 	}
 	return "GDI"
 }
@@ -265,12 +267,8 @@ func (c *screenCapturer) copyDXGIRegion(dst []byte, img *image.RGBA) error {
 	srcY := overlap.Min.Y - c.display.Min.Y
 	dstX := overlap.Min.X - c.rect.Min.X
 	dstY := overlap.Min.Y - c.rect.Min.Y
-	displayW := c.display.Dx()
-	displayH := c.display.Dy()
-	imgW := img.Bounds().Dx()
-	imgH := img.Bounds().Dy()
-	if displayW != imgW || displayH != imgH {
-		return c.copyDXGIRotatedRegion(dst, img, overlap, srcX, srcY, dstX, dstY, displayW, displayH)
+	if c.dxgiRotation != 0 && c.dxgiRotation != 1 {
+		return c.copyDXGIRotatedRegion(dst, img, overlap, srcX, srcY, dstX, dstY)
 	}
 	if srcX < 0 || srcY < 0 || srcX+overlap.Dx() > img.Bounds().Dx() || srcY+overlap.Dy() > img.Bounds().Dy() {
 		return fmt.Errorf("%w: DXGI frame %dx%d does not contain overlap %v within display %v", ErrScreenCapture, img.Bounds().Dx(), img.Bounds().Dy(), overlap, c.display)
@@ -285,21 +283,20 @@ func (c *screenCapturer) copyDXGIRegion(dst []byte, img *image.RGBA) error {
 	return nil
 }
 
-func (c *screenCapturer) copyDXGIRotatedRegion(dst []byte, img *image.RGBA, overlap image.Rectangle, srcX int, srcY int, dstX int, dstY int, displayW int, displayH int) error {
+func (c *screenCapturer) copyDXGIRotatedRegion(dst []byte, img *image.RGBA, overlap image.Rectangle, srcX int, srcY int, dstX int, dstY int) error {
+	displayW := c.display.Dx()
+	displayH := c.display.Dy()
 	imgW := img.Bounds().Dx()
 	imgH := img.Bounds().Dy()
-	if imgW != displayH || imgH != displayW {
-		return fmt.Errorf("%w: DXGI frame %dx%d does not match rotated display %dx%d", ErrScreenCapture, imgW, imgH, displayW, displayH)
-	}
 	dstStride := c.width * 4
 	for y := 0; y < overlap.Dy(); y++ {
 		for x := 0; x < overlap.Dx(); x++ {
-			// Desktop portrait coordinates map to the unrotated DXGI landscape surface.
-			// This handles DXGI_MODE_ROTATION_ROTATE90, the common Windows portrait case.
-			rotX := srcY + y
-			rotY := displayW - 1 - (srcX + x)
+			rotX, rotY, err := mapDXGIRotatedPoint(srcX+x, srcY+y, displayW, displayH, imgW, imgH, c.dxgiRotation)
+			if err != nil {
+				return err
+			}
 			if rotX < 0 || rotY < 0 || rotX >= imgW || rotY >= imgH {
-				return fmt.Errorf("%w: rotated DXGI source (%d,%d) outside frame %dx%d for overlap %v display %v", ErrScreenCapture, rotX, rotY, imgW, imgH, overlap, c.display)
+				return fmt.Errorf("%w: rotated DXGI source (%d,%d) outside frame %dx%d for overlap %v display %v rotation=%d", ErrScreenCapture, rotX, rotY, imgW, imgH, overlap, c.display, c.dxgiRotation)
 			}
 			srcStart := rotY*img.Stride + rotX*4
 			dstStart := (dstY+y)*dstStride + (dstX+x)*4
@@ -307,6 +304,21 @@ func (c *screenCapturer) copyDXGIRotatedRegion(dst []byte, img *image.RGBA, over
 		}
 	}
 	return nil
+}
+
+func mapDXGIRotatedPoint(x int, y int, displayW int, displayH int, imgW int, imgH int, rotation uint32) (int, int, error) {
+	switch rotation {
+	case 1:
+		return x, y, nil
+	case 2:
+		return y, displayW - 1 - x, nil
+	case 3:
+		return displayW - 1 - x, displayH - 1 - y, nil
+	case 4:
+		return displayH - 1 - y, x, nil
+	default:
+		return 0, 0, fmt.Errorf("%w: unsupported DXGI rotation=%d display=%dx%d frame=%dx%d", ErrScreenCapture, rotation, displayW, displayH, imgW, imgH)
+	}
 }
 
 func displayForRect(rect image.Rectangle) (index int, bounds image.Rectangle, clipped bool, ok bool) {
