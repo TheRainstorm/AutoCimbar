@@ -2,9 +2,11 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"image"
 	"image/png"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -57,6 +59,18 @@ func saveCapturedFramePNG(path string, frame *capturedScreenFrame) error {
 	}
 	defer f.Close()
 	return png.Encode(f, img)
+}
+
+func debugCaptureFramePath(path string, index int) string {
+	if path == "" {
+		return ""
+	}
+	ext := filepath.Ext(path)
+	stem := strings.TrimSuffix(path, ext)
+	if ext == "" {
+		ext = ".png"
+	}
+	return fmt.Sprintf("%s_%03d%s", stem, index, ext)
 }
 
 func copyBGRAFrameToRGBA(dst []byte, src []byte, width int, height int, stride int) {

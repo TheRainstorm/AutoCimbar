@@ -490,7 +490,8 @@ func runScreenCaptureLoop(capturer *screenCapturer, interval time.Duration, prog
 	defer close(done)
 	nextCapture := time.Now()
 	var buf []byte
-	debugSaved := debugCapturePath == ""
+	debugCaptureCount := 0
+	const maxDebugCaptures = 60
 	for {
 		if !waitWhilePaused(isPaused, stop) {
 			return
@@ -527,8 +528,9 @@ func runScreenCaptureLoop(capturer *screenCapturer, interval time.Duration, prog
 			return
 		}
 		progress.noteCaptured()
-		if !debugSaved {
-			if err := saveCapturedFramePNG(debugCapturePath, frame); err != nil {
+		if debugCapturePath != "" && debugCaptureCount < maxDebugCaptures {
+			path := debugCaptureFramePath(debugCapturePath, debugCaptureCount)
+			if err := saveCapturedFramePNG(path, frame); err != nil {
 				select {
 				case captureErr <- fmt.Errorf("save debug capture: %w", err):
 				default:
@@ -536,9 +538,9 @@ func runScreenCaptureLoop(capturer *screenCapturer, interval time.Duration, prog
 				recycleCapturedFrame(frame, freeBuffers)
 				return
 			}
-			debugSaved = true
+			debugCaptureCount++
 			if progress.out != nil {
-				fmt.Fprintf(progress.out, "debug capture saved: %s\n", debugCapturePath)
+				fmt.Fprintf(progress.out, "debug capture saved: %s\n", path)
 			}
 		}
 
