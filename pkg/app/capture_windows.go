@@ -265,6 +265,13 @@ func (c *screenCapturer) copyDXGIRegion(dst []byte, img *image.RGBA) error {
 	srcY := overlap.Min.Y - c.display.Min.Y
 	dstX := overlap.Min.X - c.rect.Min.X
 	dstY := overlap.Min.Y - c.rect.Min.Y
+	displayW := c.display.Dx()
+	displayH := c.display.Dy()
+	imgW := img.Bounds().Dx()
+	imgH := img.Bounds().Dy()
+	if displayW != imgW || displayH != imgH {
+		return c.copyDXGIRotatedRegion(dst, img, overlap, srcX, srcY, dstX, dstY, displayW, displayH)
+	}
 	if srcX < 0 || srcY < 0 || srcX+overlap.Dx() > img.Bounds().Dx() || srcY+overlap.Dy() > img.Bounds().Dy() {
 		return fmt.Errorf("%w: DXGI frame %dx%d does not contain overlap %v within display %v", ErrScreenCapture, img.Bounds().Dx(), img.Bounds().Dy(), overlap, c.display)
 	}
@@ -274,6 +281,30 @@ func (c *screenCapturer) copyDXGIRegion(dst []byte, img *image.RGBA) error {
 		srcStart := (srcY+y)*img.Stride + srcX*4
 		dstStart := (dstY+y)*dstStride + dstX*4
 		copy(dst[dstStart:dstStart+rowBytes], img.Pix[srcStart:srcStart+rowBytes])
+	}
+	return nil
+}
+
+func (c *screenCapturer) copyDXGIRotatedRegion(dst []byte, img *image.RGBA, overlap image.Rectangle, srcX int, srcY int, dstX int, dstY int, displayW int, displayH int) error {
+	imgW := img.Bounds().Dx()
+	imgH := img.Bounds().Dy()
+	if imgW != displayH || imgH != displayW {
+		return fmt.Errorf("%w: DXGI frame %dx%d does not match rotated display %dx%d", ErrScreenCapture, imgW, imgH, displayW, displayH)
+	}
+	dstStride := c.width * 4
+	for y := 0; y < overlap.Dy(); y++ {
+		for x := 0; x < overlap.Dx(); x++ {
+			// Desktop portrait coordinates map to the unrotated DXGI landscape surface.
+			// This handles DXGI_MODE_ROTATION_ROTATE90, the common Windows portrait case.
+			rotX := srcY + y
+			rotY := displayW - 1 - (srcX + x)
+			if rotX < 0 || rotY < 0 || rotX >= imgW || rotY >= imgH {
+				return fmt.Errorf("%w: rotated DXGI source (%d,%d) outside frame %dx%d for overlap %v display %v", ErrScreenCapture, rotX, rotY, imgW, imgH, overlap, c.display)
+			}
+			srcStart := rotY*img.Stride + rotX*4
+			dstStart := (dstY+y)*dstStride + (dstX+x)*4
+			copy(dst[dstStart:dstStart+4], img.Pix[srcStart:srcStart+4])
+		}
 	}
 	return nil
 }
