@@ -72,6 +72,17 @@ func ParseCellSpec(text string, defaults CellSpec) (CellSpec, error) {
 	return out, nil
 }
 
+func CellSpecName(tile string, shapeBits int, colorBits int) string {
+	spec, err := ParseTileSpec(tile, shapeBits)
+	if err != nil {
+		return fmt.Sprintf("%st%ds%dc", strings.ToLower(strings.TrimSpace(tile)), shapeBits, colorBits)
+	}
+	if spec.Width == spec.Height {
+		return fmt.Sprintf("%dt%ds%dc", spec.Width, shapeBits, colorBits)
+	}
+	return fmt.Sprintf("%dx%dt%ds%dc", spec.Width, spec.Height, shapeBits, colorBits)
+}
+
 func ResolveGridSize(gridSize int, referenceGridSize int, spec symbol.Spec) (int, error) {
 	if referenceGridSize > 0 {
 		if err := spec.Validate(); err != nil {

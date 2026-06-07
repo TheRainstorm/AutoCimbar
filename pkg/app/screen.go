@@ -331,7 +331,8 @@ func DecodeScreenToPath(cfg ScreenDecodeConfig) (*WriteSourceResult, error) {
 	captureErr := make(chan error, 1)
 	stopCapture := make(chan struct{})
 	captureDone := make(chan struct{})
-	go runScreenCaptureLoop(capturer, interval, progress, frames, freeBuffers, captureErr, stopCapture, isPaused, cfg.DebugCapturePath, captureDone)
+	cellName := CellSpecName(cfg.Tile, spec.ShapeBits, colorBits)
+	go runScreenCaptureLoop(capturer, interval, progress, frames, freeBuffers, captureErr, stopCapture, isPaused, cfg.DebugCapturePath, cellName, captureDone)
 	decodeDone := make(chan struct{})
 	go runScreenDecodeWorkers(decoders, frames, decodedFrames, freeBuffers, progress, stopCapture, isPaused, decodeDone)
 	defer func() {
@@ -486,7 +487,7 @@ func stopTimer(timer *time.Timer) {
 	}
 }
 
-func runScreenCaptureLoop(capturer *screenCapturer, interval time.Duration, progress *screenDecoderProgress, frames chan *capturedScreenFrame, freeBuffers chan []byte, captureErr chan<- error, stop <-chan struct{}, isPaused func() bool, debugCapturePath string, done chan<- struct{}) {
+func runScreenCaptureLoop(capturer *screenCapturer, interval time.Duration, progress *screenDecoderProgress, frames chan *capturedScreenFrame, freeBuffers chan []byte, captureErr chan<- error, stop <-chan struct{}, isPaused func() bool, debugCaptureDir string, debugCaptureCell string, done chan<- struct{}) {
 	defer close(done)
 	nextCapture := time.Now()
 	var buf []byte
@@ -528,8 +529,8 @@ func runScreenCaptureLoop(capturer *screenCapturer, interval time.Duration, prog
 			return
 		}
 		progress.noteCaptured()
-		if debugCapturePath != "" && debugCaptureCount < maxDebugCaptures {
-			path := debugCaptureFramePath(debugCapturePath, debugCaptureCount)
+		if debugCaptureDir != "" && debugCaptureCount < maxDebugCaptures {
+			path := debugCaptureFramePath(debugCaptureDir, debugCaptureCell, debugCaptureCount)
 			if err := saveCapturedFramePNG(path, frame); err != nil {
 				select {
 				case captureErr <- fmt.Errorf("save debug capture: %w", err):

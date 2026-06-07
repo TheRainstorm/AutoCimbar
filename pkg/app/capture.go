@@ -40,9 +40,16 @@ func normalizeCaptureBackend(backend string) (string, error) {
 	}
 }
 
+func NormalizeCaptureBackendForConfig(backend string) (string, error) {
+	return normalizeCaptureBackend(backend)
+}
+
 func saveCapturedFramePNG(path string, frame *capturedScreenFrame) error {
 	if path == "" || frame == nil {
 		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
 	}
 	img := frame.Img
 	if img == nil {
@@ -61,16 +68,30 @@ func saveCapturedFramePNG(path string, frame *capturedScreenFrame) error {
 	return png.Encode(f, img)
 }
 
-func debugCaptureFramePath(path string, index int) string {
-	if path == "" {
+func debugCaptureFramePath(dir string, cell string, index int) string {
+	if dir == "" {
 		return ""
 	}
-	ext := filepath.Ext(path)
-	stem := strings.TrimSuffix(path, ext)
-	if ext == "" {
-		ext = ".png"
+	cell = strings.TrimSpace(cell)
+	if cell == "" {
+		cell = "capture"
 	}
-	return fmt.Sprintf("%s_%03d%s", stem, index, ext)
+	return filepath.Join(dir, fmt.Sprintf("%s_%03d.png", safeDebugCaptureName(cell), index))
+}
+
+func safeDebugCaptureName(name string) string {
+	replacer := strings.NewReplacer(
+		"/", "_",
+		"\\", "_",
+		":", "_",
+		"*", "_",
+		"?", "_",
+		"\"", "_",
+		"<", "_",
+		">", "_",
+		"|", "_",
+	)
+	return replacer.Replace(name)
 }
 
 func copyBGRAFrameToRGBA(dst []byte, src []byte, width int, height int, stride int) {
