@@ -48,3 +48,7 @@ func (c *screenCapturer) CaptureFrame(dst []byte) (*capturedScreenFrame, error) 
 func (c *screenCapturer) Close() error {
 	return nil
 }
+
+func (c *screenCapturer) Name() string {
+	return "kbinani"
+}

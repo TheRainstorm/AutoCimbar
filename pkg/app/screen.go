@@ -16,7 +16,6 @@ import (
 	"github.com/autocambar/autocambar/pkg/codec"
 	"github.com/autocambar/autocambar/pkg/fountain"
 	"github.com/autocambar/autocambar/pkg/symbol"
-	"github.com/kbinani/screenshot"
 )
 
 type ScreenEncodeConfig struct {
@@ -64,10 +63,10 @@ type ScreenDecodeConfig struct {
 var ErrStopped = errors.New("operation stopped")
 
 func DisplayBounds() []image.Rectangle {
-	count := screenshot.NumActiveDisplays()
+	count := activeDisplayCount()
 	displays := make([]image.Rectangle, 0, count)
 	for i := 0; i < count; i++ {
-		displays = append(displays, screenshot.GetDisplayBounds(i))
+		displays = append(displays, displayBounds(i))
 	}
 	return displays
 }
@@ -311,6 +310,9 @@ func DecodeScreenToPath(cfg ScreenDecodeConfig) (*WriteSourceResult, error) {
 		return nil, err
 	}
 	defer capturer.Close()
+	if cfg.Progress != nil {
+		fmt.Fprintf(cfg.Progress, "capture backend=%s\n", capturer.Name())
+	}
 
 	interval := time.Second / time.Duration(cfg.FPS)
 	if interval <= 0 {
@@ -758,10 +760,10 @@ func resolveScreenRegion(region string, width int, height int, allowImplicitScre
 	if err != nil {
 		return image.Rectangle{}, fmt.Errorf("%s region must be SCREEN, X:Y or SCREEN:X:Y: %w", label, err)
 	}
-	if screenIndex < 0 || screenIndex >= screenshot.NumActiveDisplays() {
+	if screenIndex < 0 || screenIndex >= activeDisplayCount() {
 		return image.Rectangle{}, fmt.Errorf("screen index %d out of range", screenIndex)
 	}
-	bounds := screenshot.GetDisplayBounds(screenIndex)
+	bounds := displayBounds(screenIndex)
 	x, err := resolveAxis(xToken, bounds.Min.X, bounds.Max.X, width)
 	if err != nil {
 		return image.Rectangle{}, fmt.Errorf("invalid region x: %w", err)

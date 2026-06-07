@@ -9,6 +9,8 @@ import (
 	"unsafe"
 
 	"github.com/autocambar/autocambar/pkg/codec"
+	dxshot "github.com/ghp3000/screenshot"
+	"github.com/ghp3000/screenshot/d3d"
 	"github.com/lxn/win"
 )
 
@@ -24,6 +26,9 @@ type screenCapturer struct {
 	header       win.BITMAPINFOHEADER
 	memptr       unsafe.Pointer
 	img          *image.RGBA
+	dxgi         dxshot.ScreenShot
+	display      image.Rectangle
+	lastDXGI     []byte
 }
 
 func newScreenCapturer(rect image.Rectangle) (*screenCapturer, error) {
@@ -37,49 +42,71 @@ func newScreenCapturer(rect image.Rectangle) (*screenCapturer, error) {
 		rect:   rect,
 		width:  width,
 		height: height,
-		hwnd:   win.GetDesktopWindow(),
-		img:    image.NewRGBA(image.Rect(0, 0, width, height)),
+	}
+	if displayIndex, bounds, ok := displayForRect(rect); ok {
+		shot := dxshot.NewScreenShot(dxshot.ProviderDXGI)
+		if err := shot.Init(displayIndex); err == nil {
+			shot.DrawCursor(0)
+			c.dxgi = shot
+			c.display = bounds
+			c.img = image.NewRGBA(image.Rect(0, 0, width, height))
+			return c, nil
+		}
+		shot.Release()
 	}
 
+	if err := c.initGDI(); err != nil {
+		c.Close()
+		return nil, err
+	}
+	return c, nil
+}
+
+func (c *screenCapturer) initGDI() error {
+	c.hwnd = win.GetDesktopWindow()
+	c.img = image.NewRGBA(image.Rect(0, 0, c.width, c.height))
 	c.hdc = win.GetDC(c.hwnd)
 	if c.hdc == 0 {
-		c.Close()
-		return nil, errors.New("GetDC failed")
+		return errors.New("GetDC failed")
 	}
 
 	c.memoryDevice = win.CreateCompatibleDC(c.hdc)
 	if c.memoryDevice == 0 {
-		c.Close()
-		return nil, errors.New("CreateCompatibleDC failed")
+		return errors.New("CreateCompatibleDC failed")
 	}
 
 	c.header.BiSize = uint32(unsafe.Sizeof(c.header))
 	c.header.BiPlanes = 1
 	c.header.BiBitCount = 32
-	c.header.BiWidth = int32(width)
-	c.header.BiHeight = int32(-height)
+	c.header.BiWidth = int32(c.width)
+	c.header.BiHeight = int32(-c.height)
 	c.header.BiCompression = win.BI_RGB
 
 	c.bitmap = win.CreateDIBSection(c.hdc, &c.header, win.DIB_RGB_COLORS, &c.memptr, 0, 0)
 	if c.bitmap == 0 {
-		c.Close()
-		return nil, errors.New("CreateDIBSection failed")
+		return errors.New("CreateDIBSection failed")
 	}
 	if c.memptr == nil {
-		c.Close()
-		return nil, errors.New("CreateDIBSection returned nil bits")
+		return errors.New("CreateDIBSection returned nil bits")
 	}
 
 	c.oldObject = win.SelectObject(c.memoryDevice, win.HGDIOBJ(c.bitmap))
 	if c.oldObject == 0 {
-		c.Close()
-		return nil, errors.New("SelectObject failed")
+		return errors.New("SelectObject failed")
 	}
 
-	return c, nil
+	return nil
 }
 
 func (c *screenCapturer) Capture() (*image.RGBA, error) {
+	if c.dxgi != nil {
+		frame, err := c.CaptureFrame(nil)
+		if err != nil {
+			return nil, err
+		}
+		copyBGRASliceToRGBA(c.img.Pix, frame.Pix, c.width, c.height, frame.Stride)
+		return c.img, nil
+	}
 	if !win.BitBlt(c.memoryDevice, 0, 0, int32(c.width), int32(c.height), c.hdc, int32(c.rect.Min.X), int32(c.rect.Min.Y), win.SRCCOPY) {
 		return nil, errors.New("BitBlt failed")
 	}
@@ -89,6 +116,13 @@ func (c *screenCapturer) Capture() (*image.RGBA, error) {
 }
 
 func (c *screenCapturer) DecodeInto(dec *codec.Decoder, dst []byte) ([]byte, error) {
+	if c.dxgi != nil {
+		frame, err := c.CaptureFrame(nil)
+		if err != nil {
+			return nil, err
+		}
+		return dec.DecodeBGRAInto(frame.Pix, frame.Width, frame.Height, frame.Stride, dst)
+	}
 	if !win.BitBlt(c.memoryDevice, 0, 0, int32(c.width), int32(c.height), c.hdc, int32(c.rect.Min.X), int32(c.rect.Min.Y), win.SRCCOPY) {
 		return nil, fmt.Errorf("%w: BitBlt failed", ErrScreenCapture)
 	}
@@ -99,6 +133,9 @@ func (c *screenCapturer) DecodeInto(dec *codec.Decoder, dst []byte) ([]byte, err
 }
 
 func (c *screenCapturer) CaptureFrame(dst []byte) (*capturedScreenFrame, error) {
+	if c.dxgi != nil {
+		return c.captureDXGIFrame(dst)
+	}
 	if !win.BitBlt(c.memoryDevice, 0, 0, int32(c.width), int32(c.height), c.hdc, int32(c.rect.Min.X), int32(c.rect.Min.Y), win.SRCCOPY) {
 		return nil, fmt.Errorf("%w: BitBlt failed", ErrScreenCapture)
 	}
@@ -122,6 +159,10 @@ func (c *screenCapturer) CaptureFrame(dst []byte) (*capturedScreenFrame, error) 
 }
 
 func (c *screenCapturer) Close() error {
+	if c.dxgi != nil {
+		c.dxgi.Release()
+		c.dxgi = nil
+	}
 	if c.memoryDevice != 0 && c.oldObject != 0 {
 		win.SelectObject(c.memoryDevice, c.oldObject)
 		c.oldObject = 0
@@ -141,6 +182,79 @@ func (c *screenCapturer) Close() error {
 	return nil
 }
 
+func (c *screenCapturer) Name() string {
+	if c.dxgi != nil {
+		return "DXGI"
+	}
+	return "GDI"
+}
+
+func (c *screenCapturer) captureDXGIFrame(dst []byte) (*capturedScreenFrame, error) {
+	need := c.width * c.height * 4
+	if cap(dst) < need {
+		dst = make([]byte, need)
+	} else {
+		dst = dst[:need]
+	}
+
+	img, err := c.dxgi.CaptureBGRA()
+	if err != nil {
+		if errors.Is(err, d3d.ErrNoImageYet) {
+			if len(c.lastDXGI) == need {
+				copy(dst, c.lastDXGI)
+			} else {
+				clear(dst)
+			}
+			return c.capturedBGRAFrame(dst), nil
+		}
+		return nil, fmt.Errorf("%w: DXGI capture failed: %v", ErrScreenCapture, err)
+	}
+	if err := c.copyDXGIRegion(dst, img); err != nil {
+		return nil, err
+	}
+	if cap(c.lastDXGI) < need {
+		c.lastDXGI = make([]byte, need)
+	} else {
+		c.lastDXGI = c.lastDXGI[:need]
+	}
+	copy(c.lastDXGI, dst)
+	return c.capturedBGRAFrame(dst), nil
+}
+
+func (c *screenCapturer) capturedBGRAFrame(pix []byte) *capturedScreenFrame {
+	return &capturedScreenFrame{
+		Pix:    pix,
+		Width:  c.width,
+		Height: c.height,
+		Stride: c.width * 4,
+		BGRA:   true,
+	}
+}
+
+func (c *screenCapturer) copyDXGIRegion(dst []byte, img *image.RGBA) error {
+	relX := c.rect.Min.X - c.display.Min.X
+	relY := c.rect.Min.Y - c.display.Min.Y
+	if relX < 0 || relY < 0 || relX+c.width > img.Bounds().Dx() || relY+c.height > img.Bounds().Dy() {
+		return fmt.Errorf("%w: DXGI frame %dx%d does not contain capture rect %v within display %v", ErrScreenCapture, img.Bounds().Dx(), img.Bounds().Dy(), c.rect, c.display)
+	}
+	rowBytes := c.width * 4
+	for y := 0; y < c.height; y++ {
+		srcStart := (relY+y)*img.Stride + relX*4
+		copy(dst[y*rowBytes:(y+1)*rowBytes], img.Pix[srcStart:srcStart+rowBytes])
+	}
+	return nil
+}
+
+func displayForRect(rect image.Rectangle) (int, image.Rectangle, bool) {
+	for i := 0; i < activeDisplayCount(); i++ {
+		bounds := displayBounds(i)
+		if rect.In(bounds) {
+			return i, bounds, true
+		}
+	}
+	return 0, image.Rectangle{}, false
+}
+
 func copyBGRAToRGBA(dst []byte, src unsafe.Pointer, width int, height int) {
 	offset := uintptr(src)
 	i := 0
@@ -155,6 +269,21 @@ func copyBGRAToRGBA(dst []byte, src unsafe.Pointer, width int, height int) {
 			dst[i+3] = 255
 			i += 4
 			offset += 4
+		}
+	}
+}
+
+func copyBGRASliceToRGBA(dst []byte, src []byte, width int, height int, stride int) {
+	i := 0
+	for y := 0; y < height; y++ {
+		row := src[y*stride:]
+		for x := 0; x < width; x++ {
+			p := x * 4
+			dst[i+0] = row[p+2]
+			dst[i+1] = row[p+1]
+			dst[i+2] = row[p+0]
+			dst[i+3] = 255
+			i += 4
 		}
 	}
 }
