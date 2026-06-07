@@ -15,6 +15,7 @@ export interface TransferConfig {
   symbols: string
   noZstd: boolean
   decodeWorkers: number
+  captureBackend: string
 }
 
 export interface SelectedFile {
@@ -136,6 +137,7 @@ export const defaultConfig: TransferConfig = {
   symbols: '',
   noZstd: false,
   decodeWorkers: 0,
+  captureBackend: 'auto',
 }
 
 export const AppService = {

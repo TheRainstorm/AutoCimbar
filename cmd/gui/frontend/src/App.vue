@@ -24,6 +24,12 @@ const receiver = ref<ReceiverSession | null>(null)
 const senderState = ref<TaskState>('idle')
 const receiverState = ref<TaskState>('idle')
 const advancedOpen = ref(false)
+const selectedPlacement = computed({
+  get: () => placementFromPosition(config.position),
+  set: (value: string) => {
+    config.position = positionFromPlacement(value)
+  },
+})
 const senderLogs = ref<string[]>([])
 const receiverLogs = ref<string[]>([])
 const metrics = reactive<ReceiverMetrics>({
@@ -55,8 +61,56 @@ const ringStyle = computed(() => {
   return { background: `conic-gradient(#38bdf8 ${value * 3.6}deg, rgba(31,41,55,.9) 0deg)` }
 })
 
+const tips = {
+  rq: 'Reference grid size using 8x8 tiles; actual Q scales when tile size changes.',
+  screen: 'Display index used by the sender window and receiver capture region.',
+  captureBackend:
+    'Receiver screen capture backend. DXGI is fastest, but HDR/color-managed displays can break high color-bit modes; use SDR or GDI when colors do not decode.',
+  backend: 'Frame backend. symbols is the high-throughput AutoCimBar path; qr is for QR-code comparison.',
+  cell: 'Frame format: compact cell spec with tile size, shape bits, and color bits. Sender and receiver must match.',
+  ecc: 'Frame format: per-packet Reed-Solomon ECC percentage. Sender and receiver must match.',
+  packets: 'Frame format: independent packets packed into each screen frame. Sender and receiver must match.',
+  zstd: 'Frame format: zstd source compression is enabled by default. Sender controls it; receiver detects it from transfer metadata.',
+  scale: 'Screen scale factor B. Increase when the display path needs larger pixels.',
+  fps: 'Target sender refresh or receiver capture frame rate.',
+  placement: 'Window/capture placement on the selected screen. CLI still supports exact X:Y.',
+  output: 'Output directory or file path. Directories use the sender file name.',
+}
+
 function pushLog(target: typeof senderLogs | typeof receiverLogs, message: string) {
   target.value = [...target.value.slice(-80), message]
+}
+
+function placementFromPosition(position: string): string {
+  switch ((position || '').trim()) {
+    case '0:0':
+      return 'top-left'
+    case '-0:0':
+      return 'top-right'
+    case '0:-0':
+      return 'bottom-left'
+    case 'c:c':
+      return 'center'
+    case '-0:-0':
+    default:
+      return 'bottom-right'
+  }
+}
+
+function positionFromPlacement(placement: string): string {
+  switch (placement) {
+    case 'top-left':
+      return '0:0'
+    case 'top-right':
+      return '-0:0'
+    case 'bottom-left':
+      return '0:-0'
+    case 'center':
+      return 'c:c'
+    case 'bottom-right':
+    default:
+      return '-0:-0'
+  }
 }
 
 async function loadInitial() {
@@ -168,71 +222,90 @@ onMounted(() => {
 <template>
   <main class="h-screen overflow-auto bg-gray-950 text-gray-100">
     <div class="flex min-h-full w-full min-w-0 flex-col gap-3 px-4 py-3">
+      <header class="flex items-center justify-between">
+        <div>
+          <h1 class="text-lg font-semibold text-white">AutoCimBar</h1>
+          <p class="text-xs text-gray-400">High-speed one-way screen channel file transfer</p>
+        </div>
+        <button class="rounded-lg border border-white/10 bg-gray-800 px-3 py-2 text-xs text-gray-100 shadow-lg transition-all hover:scale-105 hover:bg-gray-700" title="Hide the main window to the system tray." @click="minimizeToTray">
+          To Tray
+        </button>
+      </header>
+
       <section class="min-w-0 rounded-xl border border-white/10 bg-gray-900/80 p-3 shadow-lg backdrop-blur-xl">
-        <div class="grid min-w-0 gap-3 md:grid-cols-[110px_1fr_auto_auto]">
-          <label class="block">
+        <div class="grid min-w-0 gap-3 md:grid-cols-[100px_1fr_170px_auto]">
+          <label class="block" :title="tips.rq">
             <span class="text-xs text-gray-400">RQ</span>
             <input v-model.number="config.rq" type="number" min="1" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" />
           </label>
-          <label class="block">
+          <label class="block" :title="tips.screen">
             <span class="text-xs text-gray-400">Screen</span>
             <select v-model.number="config.screen" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400">
               <option v-for="screen in screens" :key="screen.index" :value="screen.index">{{ screen.label }}</option>
             </select>
           </label>
+          <label class="block" :title="tips.captureBackend">
+            <span class="text-xs text-gray-400">Capture</span>
+            <select v-model="config.captureBackend" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400">
+              <option value="auto">auto</option>
+              <option value="dxgi">dxgi</option>
+              <option value="gdi">gdi</option>
+            </select>
+          </label>
           <button class="self-end rounded-lg border border-white/10 bg-gray-800 px-4 py-2 text-sm text-gray-100 shadow-lg transition-all hover:scale-105 hover:bg-gray-700" @click="advancedOpen = !advancedOpen">
             Advanced
-          </button>
-          <button class="self-end rounded-lg border border-sky-400/20 bg-sky-500/10 px-4 py-2 text-sm text-sky-100 shadow-lg transition-all hover:scale-105 hover:bg-sky-500/20" @click="minimizeToTray">
-            To Tray
           </button>
         </div>
 
         <div class="grid overflow-hidden transition-all duration-300 ease-out" :class="advancedOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'">
           <div class="min-h-0">
-            <div class="mt-3 grid gap-3 md:grid-cols-5">
-              <label class="block">
-                <span class="text-xs text-gray-400">Cell (-c)</span>
-                <input v-model="config.cell" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" />
-              </label>
-              <label class="block">
-                <span class="text-xs text-gray-400">ECC</span>
-                <input v-model.number="config.ecc" type="number" min="0" max="100" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" />
-              </label>
-              <label class="block">
-                <span class="text-xs text-gray-400">Packets (-p)</span>
-                <input v-model.number="config.packets" type="number" min="1" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" />
-              </label>
-              <label class="block">
+            <div class="mt-3 rounded-xl border border-cyan-300/20 bg-cyan-500/10 p-3 shadow-lg">
+              <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-cyan-100">Frame format - both sides must match</div>
+              <div class="grid gap-3 md:grid-cols-5">
+                <label class="block" :title="tips.backend">
+                  <span class="text-xs text-cyan-100">Backend</span>
+                  <select v-model="config.backend" class="mt-1 h-9 w-full rounded-lg border border-cyan-200/20 bg-gray-950/70 px-3 text-sm text-gray-100 outline-none focus:border-cyan-300">
+                    <option value="symbols">symbols</option>
+                    <option value="qr">qr</option>
+                  </select>
+                </label>
+                <label class="block" :title="tips.cell">
+                  <span class="text-xs text-cyan-100">Cell (-c)</span>
+                  <input v-model="config.cell" class="mt-1 h-9 w-full rounded-lg border border-cyan-200/20 bg-gray-950/70 px-3 text-sm text-gray-100 outline-none focus:border-cyan-300" />
+                </label>
+                <label class="block" :title="tips.ecc">
+                  <span class="text-xs text-cyan-100">ECC</span>
+                  <input v-model.number="config.ecc" type="number" min="0" max="100" class="mt-1 h-9 w-full rounded-lg border border-cyan-200/20 bg-gray-950/70 px-3 text-sm text-gray-100 outline-none focus:border-cyan-300" />
+                </label>
+                <label class="block" :title="tips.packets">
+                  <span class="text-xs text-cyan-100">Packets (-p)</span>
+                  <input v-model.number="config.packets" type="number" min="1" class="mt-1 h-9 w-full rounded-lg border border-cyan-200/20 bg-gray-950/70 px-3 text-sm text-gray-100 outline-none focus:border-cyan-300" />
+                </label>
+                <label class="flex items-center gap-2 self-end rounded-lg border border-cyan-200/20 bg-gray-950/70 px-3 py-2 text-sm text-gray-100" :title="tips.zstd">
+                  <input v-model="config.noZstd" type="checkbox" class="h-4 w-4 accent-cyan-400" />
+                  <span>No zstd</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="mt-3 grid gap-3 md:grid-cols-3">
+              <label class="block" :title="tips.scale">
                 <span class="text-xs text-gray-400">B</span>
                 <input v-model.number="config.scale" type="number" min="1" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" />
               </label>
-              <label class="block">
-                <span class="text-xs text-gray-400">X:Y</span>
-                <input v-model="config.position" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" />
-              </label>
-              <label class="block">
+              <label class="block" :title="tips.fps">
                 <span class="text-xs text-gray-400">FPS</span>
                 <input v-model.number="config.fps" type="number" min="1" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" />
               </label>
-              <label class="block">
-                <span class="text-xs text-gray-400">Backend</span>
-                <select v-model="config.backend" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400">
-                  <option value="symbols">symbols</option>
-                  <option value="qr">qr</option>
+              <label class="block" :title="tips.placement">
+                <span class="text-xs text-gray-400">Placement</span>
+                <select v-model="selectedPlacement" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400">
+                  <option value="bottom-right">Bottom right</option>
+                  <option value="bottom-left">Bottom left</option>
+                  <option value="top-right">Top right</option>
+                  <option value="top-left">Top left</option>
+                  <option value="center">Center</option>
                 </select>
-              </label>
-              <label class="block">
-                <span class="text-xs text-gray-400">Symbols (-s)</span>
-                <input v-model="config.symbols" placeholder="built-in" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" />
-              </label>
-              <label class="block">
-                <span class="text-xs text-gray-400">Workers</span>
-                <input v-model.number="config.decodeWorkers" type="number" min="0" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" />
-              </label>
-              <label class="flex items-center gap-2 self-end rounded-lg border border-white/10 bg-gray-800 px-3 py-2 text-sm text-gray-100">
-                <input v-model="config.noZstd" type="checkbox" class="h-4 w-4 accent-sky-500" />
-                <span>No zstd</span>
               </label>
             </div>
           </div>
@@ -313,8 +386,8 @@ onMounted(() => {
           </div>
 
           <div class="mt-3 flex gap-2">
-            <input v-model="config.output" class="min-w-0 flex-1 rounded-lg border border-white/10 bg-gray-800 px-3 py-2 text-sm text-gray-100 outline-none transition-all focus:border-sky-400" placeholder="Output directory or file path" />
-            <button class="rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-100 shadow-lg transition-all hover:scale-105 hover:bg-gray-700" @click="chooseOutput">Browse</button>
+            <input v-model="config.output" class="min-w-0 flex-1 rounded-lg border border-white/10 bg-gray-800 px-3 py-2 text-sm text-gray-100 outline-none transition-all focus:border-sky-400" placeholder="Output directory or file path" :title="tips.output" />
+            <button class="rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-100 shadow-lg transition-all hover:scale-105 hover:bg-gray-700" :title="tips.output" @click="chooseOutput">Browse</button>
           </div>
 
           <div class="mt-3 grid grid-cols-3 gap-2">

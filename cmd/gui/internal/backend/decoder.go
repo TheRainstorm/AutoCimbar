@@ -171,6 +171,7 @@ func (s *DecoderService) run(task *decoderTask, session ReceiverSession, stop <-
 		Region:          regionFromConfig(cfg),
 		FPS:             cfg.FPS,
 		DecodeWorkers:   cfg.DecodeWorkers,
+		CaptureBackend:  cfg.CaptureBackend,
 		Progress:        log,
 		Stop:            stop,
 		Pause:           pause,

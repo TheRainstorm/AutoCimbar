@@ -70,6 +70,9 @@ func ValidateConfig(cfg TransferConfig) error {
 	if _, err := normalizeBackend(cfg.Backend); err != nil {
 		return err
 	}
+	if _, err := coreapp.NormalizeCaptureBackendForConfig(cfg.CaptureBackend); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -111,6 +114,12 @@ func normalizeConfig(cfg TransferConfig) TransferConfig {
 	}
 	if cfg.SymbolDir == "" {
 		cfg.SymbolDir = def.SymbolDir
+	}
+	if cfg.CaptureBackend == "" {
+		cfg.CaptureBackend = def.CaptureBackend
+	}
+	if backend, err := coreapp.NormalizeCaptureBackendForConfig(cfg.CaptureBackend); err == nil {
+		cfg.CaptureBackend = backend
 	}
 	return cfg
 }
@@ -189,6 +198,9 @@ func normalizeConfigForDefaults(cfg TransferConfig) TransferConfig {
 	if cfg.Backend == "" {
 		cfg.Backend = def.Backend
 	}
+	if cfg.CaptureBackend == "" {
+		cfg.CaptureBackend = def.CaptureBackend
+	}
 	return cfg
 }
 
@@ -260,6 +272,8 @@ func applyConfigValues(cfg *TransferConfig, values map[string]string) {
 			setBool(&cfg.NoZstd, value)
 		case "decode-workers":
 			setInt(&cfg.DecodeWorkers, value)
+		case "capture-backend":
+			cfg.CaptureBackend = value
 		}
 	}
 }
