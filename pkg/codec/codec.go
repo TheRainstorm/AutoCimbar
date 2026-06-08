@@ -5,6 +5,8 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
+	"runtime"
+	"sync"
 
 	colorpkg "github.com/autocambar/autocambar/pkg/color"
 	"github.com/autocambar/autocambar/pkg/symbol"
@@ -25,6 +27,11 @@ const ColorBits = 2
 
 // ShapeBits 形状位数 (16 种形状 = 4 bits)
 const ShapeBits = symbol.DefaultShapeBits
+
+const (
+	parallelDecodeMinCells   = 1600
+	parallelDecodeMaxWorkers = 8
+)
 
 // Encoder 编码器
 type Encoder struct {
@@ -477,6 +484,34 @@ func (d *Decoder) samples() []uint8 {
 }
 
 func (d *Decoder) decodeRGBAInto(img *image.RGBA, bounds image.Rectangle, numCells int, dst []byte) {
+	workers, chunkSize := parallelDecodePlan(numCells, d.cellBits)
+	if workers > 1 {
+		var wg sync.WaitGroup
+		wg.Add(workers)
+		for start := 0; start < numCells; start += chunkSize {
+			end := start + chunkSize
+			if end > numCells {
+				end = numCells
+			}
+			go func(startCell, endCell int) {
+				defer wg.Done()
+				var sampleStorage [64]uint8
+				samples := sampleStorage[:d.tileWidth*d.tileHeight]
+				for i := startCell; i < endCell; i++ {
+					x := bounds.Min.X + (i%d.gridSize)*d.cellSize
+					y := bounds.Min.Y + (i/d.gridSize)*d.cellSize
+
+					hash := d.cellHashRGBAWithBuf(img, x, y, samples)
+					shapeID, _ := d.symbolRecognizer.RecognizeHash(hash)
+					colorID := d.recognizeCellColorRGBA(img, x, y, shapeID)
+					writeCellBits(dst, i, d.cellBits, (uint16(colorID)&d.colorMask)<<d.shapeBits|uint16(shapeID))
+				}
+			}(start, end)
+		}
+		wg.Wait()
+		return
+	}
+
 	for i := 0; i < numCells; i++ {
 		x := bounds.Min.X + (i%d.gridSize)*d.cellSize
 		y := bounds.Min.Y + (i/d.gridSize)*d.cellSize
@@ -489,6 +524,34 @@ func (d *Decoder) decodeRGBAInto(img *image.RGBA, bounds image.Rectangle, numCel
 }
 
 func (d *Decoder) decodeBGRAInto(pix []byte, stride int, numCells int, dst []byte) {
+	workers, chunkSize := parallelDecodePlan(numCells, d.cellBits)
+	if workers > 1 {
+		var wg sync.WaitGroup
+		wg.Add(workers)
+		for start := 0; start < numCells; start += chunkSize {
+			end := start + chunkSize
+			if end > numCells {
+				end = numCells
+			}
+			go func(startCell, endCell int) {
+				defer wg.Done()
+				var sampleStorage [64]uint8
+				samples := sampleStorage[:d.tileWidth*d.tileHeight]
+				for i := startCell; i < endCell; i++ {
+					x := (i % d.gridSize) * d.cellSize
+					y := (i / d.gridSize) * d.cellSize
+
+					hash := d.cellHashBGRAWithBuf(pix, stride, x, y, samples)
+					shapeID, _ := d.symbolRecognizer.RecognizeHash(hash)
+					colorID := d.recognizeCellColorBGRA(pix, stride, x, y, shapeID)
+					writeCellBits(dst, i, d.cellBits, (uint16(colorID)&d.colorMask)<<d.shapeBits|uint16(shapeID))
+				}
+			}(start, end)
+		}
+		wg.Wait()
+		return
+	}
+
 	for i := 0; i < numCells; i++ {
 		x := (i % d.gridSize) * d.cellSize
 		y := (i / d.gridSize) * d.cellSize
@@ -498,6 +561,52 @@ func (d *Decoder) decodeBGRAInto(pix []byte, stride int, numCells int, dst []byt
 		colorID := d.recognizeCellColorBGRA(pix, stride, x, y, shapeID)
 		writeCellBits(dst, i, d.cellBits, (uint16(colorID)&d.colorMask)<<d.shapeBits|uint16(shapeID))
 	}
+}
+
+func parallelDecodePlan(numCells int, cellBits int) (workers int, chunkSize int) {
+	if numCells < parallelDecodeMinCells {
+		return 1, numCells
+	}
+	workers = runtime.GOMAXPROCS(0)
+	if workers > parallelDecodeMaxWorkers {
+		workers = parallelDecodeMaxWorkers
+	}
+	if workers < 2 {
+		return 1, numCells
+	}
+
+	alignCells := byteAlignedCellCount(cellBits)
+	chunkSize = (numCells + workers - 1) / workers
+	chunkSize = roundUp(chunkSize, alignCells)
+	workers = (numCells + chunkSize - 1) / chunkSize
+	if workers < 2 {
+		return 1, numCells
+	}
+	return workers, chunkSize
+}
+
+func byteAlignedCellCount(cellBits int) int {
+	if cellBits <= 0 {
+		return 1
+	}
+	return 8 / gcd(cellBits, 8)
+}
+
+func gcd(a int, b int) int {
+	for b != 0 {
+		a, b = b, a%b
+	}
+	if a < 0 {
+		return -a
+	}
+	return a
+}
+
+func roundUp(v int, unit int) int {
+	if unit <= 1 {
+		return v
+	}
+	return ((v + unit - 1) / unit) * unit
 }
 
 func writeCellBits(dst []byte, cellIndex int, cellBits int, bits uint16) {
@@ -515,6 +624,10 @@ func writeCellBits(dst []byte, cellIndex int, cellBits int, bits uint16) {
 
 func (d *Decoder) cellHashBGRA(pix []byte, stride int, x int, y int) uint64 {
 	samples := d.samples()
+	return d.cellHashBGRAWithBuf(pix, stride, x, y, samples)
+}
+
+func (d *Decoder) cellHashBGRAWithBuf(pix []byte, stride int, x int, y int, samples []uint8) uint64 {
 	var sum uint64
 
 	for ty := 0; ty < d.tileHeight; ty++ {
@@ -643,6 +756,10 @@ func (d *Decoder) buildForegroundPixels() {
 
 func (d *Decoder) cellHashRGBA(img *image.RGBA, x, y int) uint64 {
 	samples := d.samples()
+	return d.cellHashRGBAWithBuf(img, x, y, samples)
+}
+
+func (d *Decoder) cellHashRGBAWithBuf(img *image.RGBA, x, y int, samples []uint8) uint64 {
 	var sum uint64
 
 	for ty := 0; ty < d.tileHeight; ty++ {

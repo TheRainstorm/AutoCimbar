@@ -543,16 +543,73 @@ func BenchmarkDecodeBGRAIntoFullFrame(b *testing.B) {
 	}
 }
 
+func BenchmarkDecodeBGRAIntoCellFormats(b *testing.B) {
+	cases := []struct {
+		name      string
+		tile      int
+		shapeBits int
+		colorBits int
+		gridSize  int
+	}{
+		{name: "8t4s2c", tile: 8, shapeBits: 4, colorBits: 2, gridSize: 120},
+		{name: "6t4s4c", tile: 6, shapeBits: 4, colorBits: 4, gridSize: 120},
+		{name: "4t4s8c", tile: 4, shapeBits: 4, colorBits: 8, gridSize: 240},
+	}
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			symRec, colorRec := createBenchRecognizersForSpec(b, tc.tile, tc.tile, tc.shapeBits, tc.colorBits)
+			encoder, err := NewEncoderWithColorBits(symRec, colorRec, tc.tile, tc.gridSize, tc.colorBits)
+			if err != nil {
+				b.Fatal(err)
+			}
+			decoder, err := NewDecoderWithColorBits(symRec, colorRec, tc.tile, tc.gridSize, tc.colorBits)
+			if err != nil {
+				b.Fatal(err)
+			}
+			payloadBytes := tc.gridSize * tc.gridSize * (tc.shapeBits + tc.colorBits) / 8
+			data := make([]byte, payloadBytes)
+			bgra, err := encoder.EncodeBGRA(data, nil)
+			if err != nil {
+				b.Fatal(err)
+			}
+			width := tc.gridSize * tc.tile
+			stride := width * 4
+			var dst []byte
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				dst, err = decoder.DecodeBGRAInto(bgra, width, width, stride, dst)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
 func createBenchRecognizers(b *testing.B) (*symbol.Recognizer, *colorpkg.Recognizer) {
 	b.Helper()
+	return createBenchRecognizersForSpec(b, symbol.DefaultTileWidth, symbol.DefaultTileHeight, symbol.DefaultShapeBits, ColorBits)
+}
 
-	symRec := symbol.NewRecognizer()
-	for i := symbol.SymbolID(0); i < symbol.NumSymbols; i++ {
+func createBenchRecognizersForSpec(b *testing.B, tileWidth int, tileHeight int, shapeBits int, colorBits int) (*symbol.Recognizer, *colorpkg.Recognizer) {
+	b.Helper()
+
+	spec, err := symbol.NewSpec(tileWidth, tileHeight, shapeBits)
+	if err != nil {
+		b.Fatal(err)
+	}
+	symRec := symbol.NewRecognizerWithSpec(spec)
+	for i := symbol.SymbolID(0); i < symbol.SymbolID(spec.SymbolCount()); i++ {
 		img := createTestSymbol(int(i))
-		symRec.LoadSymbol(i, img)
+		if err := symRec.LoadSymbol(i, img); err != nil {
+			b.Fatal(err)
+		}
 	}
 
-	colorRec := colorpkg.NewRecognizer4Color()
+	colorRec, err := colorpkg.NewRecognizerForBits(colorBits)
+	if err != nil {
+		b.Fatal(err)
+	}
 
 	return symRec, colorRec
 }
