@@ -362,6 +362,8 @@ type Decoder struct {
 	templateMasks    [][]bool
 	templatesReady   []bool
 	foregroundPixels [][]image.Point
+	foregroundBits   []uint64
+	foregroundCounts []uint8
 	sampleBuf        []uint8
 }
 
@@ -489,6 +491,10 @@ func (d *Decoder) decodeRGBAInto(img *image.RGBA, bounds image.Rectangle, numCel
 }
 
 func (d *Decoder) decodeBGRAInto(pix []byte, stride int, numCells int, dst []byte) {
+	if d.tileWidth == 4 && d.tileHeight == 4 && d.cellSize == 4 && d.shapeBits == 4 && d.colorBits == 8 && d.cellBits == 12 {
+		d.decodeBGRA4x4Color8Into(pix, stride, numCells, dst)
+		return
+	}
 	for i := 0; i < numCells; i++ {
 		x := (i % d.gridSize) * d.cellSize
 		y := (i / d.gridSize) * d.cellSize
@@ -498,6 +504,72 @@ func (d *Decoder) decodeBGRAInto(pix []byte, stride int, numCells int, dst []byt
 		colorID := d.recognizeCellColorBGRA(pix, stride, x, y, shapeID)
 		writeCellBits(dst, i, d.cellBits, (uint16(colorID)&d.colorMask)<<d.shapeBits|uint16(shapeID))
 	}
+}
+
+func (d *Decoder) decodeBGRA4x4Color8Into(pix []byte, stride int, numCells int, dst []byte) {
+	var samples [16]uint8
+	for i := 0; i < numCells; i++ {
+		x := (i % d.gridSize) * 4
+		y := (i / d.gridSize) * 4
+		base := y*stride + x*4
+
+		var sum uint16
+		for ty := 0; ty < 4; ty++ {
+			row := base + ty*stride
+			for tx := 0; tx < 4; tx++ {
+				offset := row + tx*4
+				b := pix[offset]
+				g := pix[offset+1]
+				r := pix[offset+2]
+				intensity := maxRGB(r, g, b)
+				samples[ty*4+tx] = intensity
+				sum += uint16(intensity)
+			}
+		}
+
+		threshold := uint8(sum >> 4)
+		var hash uint64
+		for j := 0; j < 16; j++ {
+			hash <<= 1
+			if samples[j] > threshold {
+				hash |= 1
+			}
+		}
+
+		shapeID, _ := d.symbolRecognizer.RecognizeHash(hash)
+		colorID := d.recognizeCellColorBGRA4x4(pix, stride, base, shapeID)
+		writeCellBits12(dst, i, (uint16(colorID)<<4)|uint16(shapeID))
+	}
+}
+
+func (d *Decoder) recognizeCellColorBGRA4x4(pix []byte, stride int, base int, shapeID symbol.SymbolID) colorpkg.ColorID {
+	if int(shapeID) >= len(d.foregroundBits) {
+		return colorpkg.ColorID(0)
+	}
+	mask := d.foregroundBits[shapeID]
+	count := d.foregroundCounts[shapeID]
+	if mask == 0 || count == 0 {
+		return colorpkg.ColorID(0)
+	}
+
+	var sumR, sumG, sumB uint32
+	for idx := 0; idx < 16; idx++ {
+		if mask&(1<<idx) == 0 {
+			continue
+		}
+		offset := base + (idx/4)*stride + (idx%4)*4
+		sumB += uint32(pix[offset])
+		sumG += uint32(pix[offset+1])
+		sumR += uint32(pix[offset+2])
+	}
+	avg := color.RGBA{
+		R: uint8(sumR / uint32(count)),
+		G: uint8(sumG / uint32(count)),
+		B: uint8(sumB / uint32(count)),
+		A: 255,
+	}
+	colorID, _ := d.colorRecognizer.RecognizeColorRGB(avg)
+	return colorID
 }
 
 func writeCellBits(dst []byte, cellIndex int, cellBits int, bits uint16) {
@@ -510,6 +582,21 @@ func writeCellBits(dst []byte, cellIndex int, cellBits int, bits uint16) {
 			dst[byteIndex] |= 1 << bitOffset
 		}
 		bitIndex++
+	}
+}
+
+func writeCellBits12(dst []byte, cellIndex int, bits uint16) {
+	byteIndex := (cellIndex / 2) * 3
+	if cellIndex%2 == 0 {
+		dst[byteIndex] = byte(bits >> 4)
+		if byteIndex+1 < len(dst) {
+			dst[byteIndex+1] |= byte(bits << 4)
+		}
+		return
+	}
+	dst[byteIndex+1] |= byte(bits >> 8)
+	if byteIndex+2 < len(dst) {
+		dst[byteIndex+2] = byte(bits)
 	}
 }
 
@@ -623,6 +710,8 @@ func (d *Decoder) extractCellsRGBA(img *image.RGBA, bounds image.Rectangle, numC
 
 func (d *Decoder) buildForegroundPixels() {
 	d.foregroundPixels = make([][]image.Point, d.symbolRecognizer.SymbolCount())
+	d.foregroundBits = make([]uint64, d.symbolRecognizer.SymbolCount())
+	d.foregroundCounts = make([]uint8, d.symbolRecognizer.SymbolCount())
 	for shapeID := 0; shapeID < d.symbolRecognizer.SymbolCount(); shapeID++ {
 		if !d.templatesReady[shapeID] {
 			continue
@@ -638,6 +727,15 @@ func (d *Decoder) buildForegroundPixels() {
 			}
 		}
 		d.foregroundPixels[shapeID] = pixels
+		if d.cellSize == d.tileWidth && d.cellSize == d.tileHeight {
+			var mask uint64
+			for _, p := range pixels {
+				idx := p.Y*d.tileWidth + p.X
+				mask |= 1 << idx
+			}
+			d.foregroundBits[shapeID] = mask
+			d.foregroundCounts[shapeID] = uint8(len(pixels))
+		}
 	}
 }
 

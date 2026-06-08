@@ -91,6 +91,11 @@ type Recognizer struct {
 	referenceRGB []color.RGBA
 	// 近似视频编码色彩空间，用于解码热路径的快速颜色匹配。
 	referenceYCbCr []YCbCrColor
+	// Quantized RGB lookup for high-cardinality palettes. It keeps the hot path
+	// O(1) while preserving the same YCbCr metric used by RecognizeColorRGB.
+	rgbLookup []ColorID
+	rgbShift  uint
+	exactRGB  map[uint32]ColorID
 }
 
 // LABColor LAB 色彩空间颜色
@@ -211,6 +216,7 @@ func NewRecognizer(palette []color.RGBA) *Recognizer {
 		r.referenceLAB[i] = RGBToLAB(c)
 		r.referenceYCbCr[i] = RGBToYCbCr(c)
 	}
+	r.buildRGBLookup()
 
 	return r
 }
@@ -251,6 +257,15 @@ func (r *Recognizer) RecognizeColor(c color.RGBA) (ColorID, float64) {
 
 func (r *Recognizer) RecognizeColorRGB(c color.RGBA) (ColorID, uint32) {
 	input := RGBToYCbCr(c)
+	if len(r.rgbLookup) > 0 {
+		if id, ok := r.exactRGB[exactRGBKey(c)]; ok {
+			return id, ycbcrDistance(input, r.referenceYCbCr[id])
+		}
+		idx := quantizedRGBIndex(c, r.rgbShift)
+		id := r.rgbLookup[idx]
+		return id, ycbcrDistance(input, r.referenceYCbCr[id])
+	}
+
 	bestID := ColorID(0)
 	var minDist uint32 = ^uint32(0)
 
@@ -263,6 +278,57 @@ func (r *Recognizer) RecognizeColorRGB(c color.RGBA) (ColorID, uint32) {
 	}
 
 	return bestID, minDist
+}
+
+func (r *Recognizer) buildRGBLookup() {
+	if len(r.referenceRGB) < 32 {
+		return
+	}
+	const shift = 2
+	const levels = 1 << (8 - shift)
+	table := make([]ColorID, levels*levels*levels)
+	exact := make(map[uint32]ColorID, len(r.referenceRGB))
+	for id, c := range r.referenceRGB {
+		exact[exactRGBKey(c)] = ColorID(id)
+	}
+	for ri := 0; ri < levels; ri++ {
+		for gi := 0; gi < levels; gi++ {
+			for bi := 0; bi < levels; bi++ {
+				c := color.RGBA{
+					R: uint8((ri << shift) + (1 << (shift - 1))),
+					G: uint8((gi << shift) + (1 << (shift - 1))),
+					B: uint8((bi << shift) + (1 << (shift - 1))),
+					A: 255,
+				}
+				input := RGBToYCbCr(c)
+				bestID := ColorID(0)
+				var minDist uint32 = ^uint32(0)
+				for i, ref := range r.referenceYCbCr {
+					dist := ycbcrDistance(input, ref)
+					if dist < minDist {
+						minDist = dist
+						bestID = ColorID(i)
+					}
+				}
+				table[quantizedRGBIndex(c, shift)] = bestID
+			}
+		}
+	}
+	r.rgbLookup = table
+	r.rgbShift = shift
+	r.exactRGB = exact
+}
+
+func quantizedRGBIndex(c color.RGBA, shift uint) int {
+	levels := 1 << (8 - shift)
+	r := int(c.R >> shift)
+	g := int(c.G >> shift)
+	b := int(c.B >> shift)
+	return (r*levels+g)*levels + b
+}
+
+func exactRGBKey(c color.RGBA) uint32 {
+	return uint32(c.R)<<16 | uint32(c.G)<<8 | uint32(c.B)
 }
 
 func RGBToYCbCr(c color.RGBA) YCbCrColor {

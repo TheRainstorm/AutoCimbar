@@ -68,9 +68,16 @@ func (s Spec) TileBits() int {
 
 // Recognizer 符号识别器
 type Recognizer struct {
-	spec      Spec
-	hashes    []uint64
-	templates []*image.Gray
+	spec            Spec
+	hashes          []uint64
+	templates       []*image.Gray
+	hashLookup      []hashLookupEntry
+	hashLookupReady bool
+}
+
+type hashLookupEntry struct {
+	id   SymbolID
+	dist uint8
 }
 
 // NewRecognizer 创建新的符号识别器
@@ -112,6 +119,7 @@ func (r *Recognizer) LoadSymbol(id SymbolID, img image.Image) error {
 	// 保存
 	r.hashes[id] = hash
 	r.templates[id] = tile
+	r.rebuildHashLookup()
 
 	return nil
 }
@@ -129,6 +137,12 @@ func (r *Recognizer) Recognize(cellImg image.Image) (SymbolID, int) {
 
 // RecognizeHash 根据已计算好的 8x8 image hash 识别符号。
 func (r *Recognizer) RecognizeHash(hash uint64) (SymbolID, int) {
+	if r.hashLookupReady {
+		mask := uint64(len(r.hashLookup) - 1)
+		entry := r.hashLookup[int(hash&mask)]
+		return entry.id, int(entry.dist)
+	}
+
 	minDist := r.spec.TileBits() + 1
 	bestID := SymbolID(0)
 
@@ -141,6 +155,30 @@ func (r *Recognizer) RecognizeHash(hash uint64) (SymbolID, int) {
 	}
 
 	return bestID, minDist
+}
+
+func (r *Recognizer) rebuildHashLookup() {
+	r.hashLookup = nil
+	r.hashLookupReady = false
+	if r.spec.TileBits() != 16 || !r.IsLoaded() {
+		return
+	}
+	const tableSize = 1 << 16
+	table := make([]hashLookupEntry, tableSize)
+	for hash := 0; hash < tableSize; hash++ {
+		bestID := SymbolID(0)
+		minDist := r.spec.TileBits() + 1
+		for id := 0; id < r.SymbolCount(); id++ {
+			dist := HammingDistance(uint64(hash), r.hashes[id])
+			if dist < minDist {
+				minDist = dist
+				bestID = SymbolID(id)
+			}
+		}
+		table[hash] = hashLookupEntry{id: bestID, dist: uint8(minDist)}
+	}
+	r.hashLookup = table
+	r.hashLookupReady = true
 }
 
 // GetTemplate 获取符号的 8x8 模板

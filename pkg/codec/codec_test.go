@@ -543,6 +543,49 @@ func BenchmarkDecodeBGRAIntoFullFrame(b *testing.B) {
 	}
 }
 
+func BenchmarkDecodeBGRAInto4t4s8cRQ120(b *testing.B) {
+	spec, err := symbol.NewSpec(4, 4, 4)
+	if err != nil {
+		b.Fatal(err)
+	}
+	symRec := symbol.NewRecognizerWithSpec(spec)
+	for i := symbol.SymbolID(0); i < symbol.SymbolID(spec.SymbolCount()); i++ {
+		if err := symRec.LoadSymbol(i, createTestSymbol(int(i))); err != nil {
+			b.Fatal(err)
+		}
+	}
+	colorRec, err := colorpkg.NewRecognizerForBits(8)
+	if err != nil {
+		b.Fatal(err)
+	}
+	const gridSize = 240
+	const cellSize = 4
+	encoder, err := NewEncoderWithColorBits(symRec, colorRec, cellSize, gridSize, 8)
+	if err != nil {
+		b.Fatal(err)
+	}
+	decoder, err := NewDecoderWithColorBits(symRec, colorRec, cellSize, gridSize, 8)
+	if err != nil {
+		b.Fatal(err)
+	}
+	data := make([]byte, gridSize*gridSize*(spec.ShapeBits+8)/8)
+	bgra, err := encoder.EncodeBGRA(data, nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+	width := gridSize * cellSize
+	stride := width * 4
+	var dst []byte
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		dst, err = decoder.DecodeBGRAInto(bgra, width, width, stride, dst)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func createBenchRecognizers(b *testing.B) (*symbol.Recognizer, *colorpkg.Recognizer) {
 	b.Helper()
 

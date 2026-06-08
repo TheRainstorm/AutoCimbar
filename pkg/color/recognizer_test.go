@@ -95,6 +95,19 @@ func TestRecognizeColorRGB(t *testing.T) {
 	}
 }
 
+func TestRecognizeColorRGBExtendedPaletteExactColors(t *testing.T) {
+	r, err := NewRecognizerForBits(8)
+	if err != nil {
+		t.Fatalf("NewRecognizerForBits: %v", err)
+	}
+	for id, c := range r.referenceRGB {
+		got, _ := r.RecognizeColorRGB(c)
+		if got != ColorID(id) {
+			t.Fatalf("palette color %d recognized as %d for %#v", id, got, c)
+		}
+	}
+}
+
 // TestColorDistance 测试颜色距离计算
 func TestColorDistance(t *testing.T) {
 	black := RGBToLAB(color.RGBA{R: 0, G: 0, B: 0, A: 255})
@@ -245,6 +258,19 @@ func BenchmarkRGBToLAB(b *testing.B) {
 
 func BenchmarkRecognizeColorRGB(b *testing.B) {
 	r := NewRecognizer4Color()
+	c := color.RGBA{R: 128, G: 64, B: 200, A: 255}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = r.RecognizeColorRGB(c)
+	}
+}
+
+func BenchmarkRecognizeColorRGB256(b *testing.B) {
+	r, err := NewRecognizerForBits(8)
+	if err != nil {
+		b.Fatal(err)
+	}
 	c := color.RGBA{R: 128, G: 64, B: 200, A: 255}
 
 	b.ResetTimer()
