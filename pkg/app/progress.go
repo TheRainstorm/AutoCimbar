@@ -193,7 +193,7 @@ type screenDecoderProgress struct {
 	duplicate         uint64
 	invalid           uint64
 	queueDropped      uint64
-	sameCaptured      uint64
+	sameSkipped       uint64
 	lastCaptured      uint64
 	lastDecoded       uint64
 	lastValid         uint64
@@ -201,7 +201,7 @@ type screenDecoderProgress struct {
 	lastDuplicate     uint64
 	lastInvalid       uint64
 	lastQueueDropped  uint64
-	lastSameCaptured  uint64
+	lastSameSkipped   uint64
 	lastRecoveredByte int
 	captureDuration   time.Duration
 	decodeDuration    time.Duration
@@ -281,7 +281,7 @@ func (p *screenDecoderProgress) noteSameCaptured() {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.sameCaptured++
+	p.sameSkipped++
 	p.render(false)
 }
 
@@ -413,19 +413,19 @@ func (p *screenDecoderProgress) render(force bool) {
 	}
 
 	captureFPS := float64(p.captured-p.lastCaptured) / window.Seconds()
-	decodeFPS := float64(p.decoded-p.lastDecoded) / window.Seconds()
+	decodedDelta := p.decoded - p.lastDecoded
+	sameDelta := p.sameSkipped - p.lastSameSkipped
+	decodeFPS := float64(decodedDelta+sameDelta) / window.Seconds()
 	validFPS := float64(p.valid-p.lastValid) / window.Seconds()
 	usefulFPS := float64(p.useful-p.lastUseful) / window.Seconds()
-	duplicateFPS := float64(p.duplicate-p.lastDuplicate) / window.Seconds()
+	duplicateFPS := float64(p.duplicate-p.lastDuplicate+sameDelta) / window.Seconds()
 	invalidFPS := float64(p.invalid-p.lastInvalid) / window.Seconds()
 	var queueDropFPS float64
 	var captureMS float64
 	var decodeMS float64
 	var packetMS float64
-	var sameCaptureFPS float64
 	if p.verbose {
 		queueDropFPS = float64(p.queueDropped-p.lastQueueDropped) / window.Seconds()
-		sameCaptureFPS = float64(p.sameCaptured-p.lastSameCaptured) / window.Seconds()
 		captureMS = averageDurationMS(p.captureDuration-p.lastCaptureDur, p.captureSamples-p.lastCaptureSample)
 		decodeMS = averageDurationMS(p.decodeDuration-p.lastDecodeDur, p.decodeSamples-p.lastDecodeSample)
 		packetMS = averageDurationMS(p.packetDuration-p.lastPacketDur, p.packetSamples-p.lastPacketSample)
@@ -452,8 +452,8 @@ func (p *screenDecoderProgress) render(force bool) {
 		fmt.Fprintf(p.out, "wait cap=%4.0f dec=%4.0f pkt v/r/u=%4.0f/%4.0f/%4.0f bad=%4.0f bad_total=%d t=%s",
 			captureFPS, decodeFPS, validFPS, duplicateFPS, usefulFPS, invalidFPS, p.invalid, shortDuration(elapsed))
 		if p.verbose {
-			fmt.Fprintf(p.out, " cap_ms=%5.2f dec_ms=%5.2f pkt_ms=%5.2f qdrop=%4.0f same=%4.0f workers=%d",
-				captureMS, decodeMS, packetMS, queueDropFPS, sameCaptureFPS, p.workerCount)
+			fmt.Fprintf(p.out, " cap_ms=%5.2f dec_ms=%5.2f pkt_ms=%5.2f qdrop=%4.0f workers=%d",
+				captureMS, decodeMS, packetMS, queueDropFPS, p.workerCount)
 		}
 		fmt.Fprintln(p.out)
 	} else {
@@ -477,8 +477,8 @@ func (p *screenDecoderProgress) render(force bool) {
 			formatBytes(recovered), formatBytes(p.fileSize), p.rank, p.blockCount,
 			shortDuration(transferElapsed), eta)
 		if p.verbose {
-			fmt.Fprintf(p.out, " cap_ms=%5.2f dec_ms=%5.2f pkt_ms=%5.2f qdrop=%4.0f same=%4.0f workers=%d",
-				captureMS, decodeMS, packetMS, queueDropFPS, sameCaptureFPS, p.workerCount)
+			fmt.Fprintf(p.out, " cap_ms=%5.2f dec_ms=%5.2f pkt_ms=%5.2f qdrop=%4.0f workers=%d",
+				captureMS, decodeMS, packetMS, queueDropFPS, p.workerCount)
 		}
 		fmt.Fprintln(p.out)
 	}
@@ -491,7 +491,7 @@ func (p *screenDecoderProgress) render(force bool) {
 	p.lastDuplicate = p.duplicate
 	p.lastInvalid = p.invalid
 	p.lastQueueDropped = p.queueDropped
-	p.lastSameCaptured = p.sameCaptured
+	p.lastSameSkipped = p.sameSkipped
 	p.lastRecoveredByte = recovered
 	p.lastCaptureDur = p.captureDuration
 	p.lastDecodeDur = p.decodeDuration
@@ -506,9 +506,9 @@ func (p *screenDecoderProgress) printHeader() {
 		return
 	}
 	p.headerPrinted = true
-	fmt.Fprintln(p.out, "fields: cap=capture fps, dec=actual decoded capture fps (excludes same/qdrop), pkt v/r/u=valid/repeat/useful packet fps, bad=invalid packet fps, spd=current KB/s, ema=smoothed KB/s")
+	fmt.Fprintln(p.out, "fields: cap=capture fps, dec=decoder-consumed fps, pkt v/r/u=valid/repeat-or-same/useful packet fps, bad=invalid packet fps, spd=current KB/s, ema=smoothed KB/s")
 	if p.verbose {
-		fmt.Fprintln(p.out, "verbose: cap_ms=avg CaptureFrame time, dec_ms=avg actual cell decode time, pkt_ms=avg packet/ECC/fountain time, qdrop=dropped captures before decode per second, same=identical captures skipped before decode per second, workers=decode worker count")
+		fmt.Fprintln(p.out, "verbose: cap_ms=avg CaptureFrame time, dec_ms=avg actual cell decode time, pkt_ms=avg packet/ECC/fountain time, qdrop=dropped captures before decode per second, workers=decode worker count")
 	}
 }
 
