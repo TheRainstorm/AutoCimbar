@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"image"
@@ -525,6 +526,9 @@ func runScreenCaptureLoop(capturer *screenCapturer, interval time.Duration, prog
 	defer close(done)
 	nextCapture := time.Now()
 	var buf []byte
+	var previousFrame []byte
+	var previousFingerprint uint64
+	var hasPreviousFrame bool
 	debugCaptureCount := 0
 	const maxDebugCaptures = 60
 	for {
@@ -570,6 +574,17 @@ func runScreenCaptureLoop(capturer *screenCapturer, interval time.Duration, prog
 			return
 		}
 		progress.noteCaptured()
+		fingerprint := capturedFrameFingerprint(frame)
+		if hasPreviousFrame && fingerprint == previousFingerprint && capturedFramePixelsEqual(previousFrame, frame) {
+			if verbose {
+				progress.noteSameCaptured()
+			}
+			recycleCapturedFrame(frame, freeBuffers)
+			continue
+		}
+		previousFrame = copyCapturedFramePixels(previousFrame, frame)
+		previousFingerprint = fingerprint
+		hasPreviousFrame = true
 		if debugCaptureDir != "" && debugCaptureCount < maxDebugCaptures {
 			path := debugCaptureFramePath(debugCaptureDir, debugCaptureCell, debugCaptureCount)
 			if err := saveCapturedFramePNG(path, frame); err != nil {
@@ -607,6 +622,106 @@ func runScreenCaptureLoop(capturer *screenCapturer, interval time.Duration, prog
 			}
 		}
 	}
+}
+
+func capturedFrameFingerprint(frame *capturedScreenFrame) uint64 {
+	if frame == nil || frame.Width <= 0 || frame.Height <= 0 {
+		return 0
+	}
+	const (
+		offset64 = 1469598103934665603
+		prime64  = 1099511628211
+		samplesX = 8
+		samplesY = 8
+	)
+	h := uint64(offset64)
+	mix := func(v byte) {
+		h ^= uint64(v)
+		h *= prime64
+	}
+	for sy := 0; sy < samplesY; sy++ {
+		y := sy * frame.Height / samplesY
+		if y >= frame.Height {
+			y = frame.Height - 1
+		}
+		for sx := 0; sx < samplesX; sx++ {
+			x := sx * frame.Width / samplesX
+			if x >= frame.Width {
+				x = frame.Width - 1
+			}
+			if frame.Pix != nil {
+				offset := y*frame.Stride + x*4
+				mix(frame.Pix[offset])
+				mix(frame.Pix[offset+1])
+				mix(frame.Pix[offset+2])
+				mix(frame.Pix[offset+3])
+				continue
+			}
+			if frame.Img != nil {
+				offset := y*frame.Img.Stride + x*4
+				mix(frame.Img.Pix[offset])
+				mix(frame.Img.Pix[offset+1])
+				mix(frame.Img.Pix[offset+2])
+				mix(frame.Img.Pix[offset+3])
+			}
+		}
+	}
+	return h
+}
+
+func capturedFramePixelsEqual(previous []byte, frame *capturedScreenFrame) bool {
+	if len(previous) == 0 || frame == nil || frame.Width <= 0 || frame.Height <= 0 {
+		return false
+	}
+	rowBytes := frame.Width * 4
+	if len(previous) != rowBytes*frame.Height {
+		return false
+	}
+	if frame.Pix != nil {
+		for y := 0; y < frame.Height; y++ {
+			src := frame.Pix[y*frame.Stride : y*frame.Stride+rowBytes]
+			if !bytes.Equal(previous[y*rowBytes:y*rowBytes+rowBytes], src) {
+				return false
+			}
+		}
+		return true
+	}
+	if frame.Img != nil {
+		for y := 0; y < frame.Height; y++ {
+			src := frame.Img.Pix[y*frame.Img.Stride : y*frame.Img.Stride+rowBytes]
+			if !bytes.Equal(previous[y*rowBytes:y*rowBytes+rowBytes], src) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+func copyCapturedFramePixels(dst []byte, frame *capturedScreenFrame) []byte {
+	if frame == nil || frame.Width <= 0 || frame.Height <= 0 {
+		return dst[:0]
+	}
+	rowBytes := frame.Width * 4
+	need := rowBytes * frame.Height
+	if cap(dst) < need {
+		dst = make([]byte, need)
+	} else {
+		dst = dst[:need]
+	}
+	if frame.Pix != nil {
+		for y := 0; y < frame.Height; y++ {
+			copy(dst[y*rowBytes:y*rowBytes+rowBytes], frame.Pix[y*frame.Stride:y*frame.Stride+rowBytes])
+		}
+		return dst
+	}
+	if frame.Img != nil {
+		for y := 0; y < frame.Height; y++ {
+			copy(dst[y*rowBytes:y*rowBytes+rowBytes], frame.Img.Pix[y*frame.Img.Stride:y*frame.Img.Stride+rowBytes])
+		}
+		return dst
+	}
+	return dst[:0]
 }
 
 type decodedScreenFrame struct {
