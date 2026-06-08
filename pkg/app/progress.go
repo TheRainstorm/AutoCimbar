@@ -506,9 +506,9 @@ func (p *screenDecoderProgress) printHeader() {
 		return
 	}
 	p.headerPrinted = true
-	fmt.Fprintln(p.out, "fields: cap=capture fps, dec=cell decode fps, pkt v/r/u=valid/repeat/useful packet fps, bad=invalid packet fps, spd=current KB/s, ema=smoothed KB/s")
+	fmt.Fprintln(p.out, "fields: cap=capture fps, dec=actual decoded capture fps (excludes same/qdrop), pkt v/r/u=valid/repeat/useful packet fps, bad=invalid packet fps, spd=current KB/s, ema=smoothed KB/s")
 	if p.verbose {
-		fmt.Fprintln(p.out, "verbose: cap_ms=avg CaptureFrame time, dec_ms=avg cell decode time, pkt_ms=avg packet/ECC/fountain time, qdrop=queue drops per second, same=identical captures skipped per second, workers=decode worker count")
+		fmt.Fprintln(p.out, "verbose: cap_ms=avg CaptureFrame time, dec_ms=avg actual cell decode time, pkt_ms=avg packet/ECC/fountain time, qdrop=dropped captures before decode per second, same=identical captures skipped before decode per second, workers=decode worker count")
 	}
 }
 
