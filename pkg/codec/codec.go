@@ -362,7 +362,6 @@ type Decoder struct {
 	templateMasks    [][]bool
 	templatesReady   []bool
 	foregroundPixels [][]image.Point
-	foregroundIndex  [][]uint8
 	sampleBuf        []uint8
 }
 
@@ -490,10 +489,6 @@ func (d *Decoder) decodeRGBAInto(img *image.RGBA, bounds image.Rectangle, numCel
 }
 
 func (d *Decoder) decodeBGRAInto(pix []byte, stride int, numCells int, dst []byte) {
-	if d.tileWidth == 4 && d.tileHeight == 4 && d.cellSize == 4 && d.shapeBits == 4 && d.colorBits == 8 && d.cellBits == 12 {
-		d.decodeBGRA4x4Color8Into(pix, stride, numCells, dst)
-		return
-	}
 	for i := 0; i < numCells; i++ {
 		x := (i % d.gridSize) * d.cellSize
 		y := (i / d.gridSize) * d.cellSize
@@ -503,172 +498,6 @@ func (d *Decoder) decodeBGRAInto(pix []byte, stride int, numCells int, dst []byt
 		colorID := d.recognizeCellColorBGRA(pix, stride, x, y, shapeID)
 		writeCellBits(dst, i, d.cellBits, (uint16(colorID)&d.colorMask)<<d.shapeBits|uint16(shapeID))
 	}
-}
-
-func (d *Decoder) decodeBGRA4x4Color8Into(pix []byte, stride int, numCells int, dst []byte) {
-	cellIndex := 0
-	for y := 0; y < d.gridSize; y++ {
-		rowBase := y * 4 * stride
-		for x := 0; x < d.gridSize; x++ {
-			base := rowBase + x*16
-			b0 := pix[base]
-			g0 := pix[base+1]
-			r0 := pix[base+2]
-			b1 := pix[base+4]
-			g1 := pix[base+5]
-			r1 := pix[base+6]
-			b2 := pix[base+8]
-			g2 := pix[base+9]
-			r2 := pix[base+10]
-			b3 := pix[base+12]
-			g3 := pix[base+13]
-			r3 := pix[base+14]
-
-			row1 := base + stride
-			b4 := pix[row1]
-			g4 := pix[row1+1]
-			r4 := pix[row1+2]
-			b5 := pix[row1+4]
-			g5 := pix[row1+5]
-			r5 := pix[row1+6]
-			b6 := pix[row1+8]
-			g6 := pix[row1+9]
-			r6 := pix[row1+10]
-			b7 := pix[row1+12]
-			g7 := pix[row1+13]
-			r7 := pix[row1+14]
-
-			row2 := row1 + stride
-			b8 := pix[row2]
-			g8 := pix[row2+1]
-			r8 := pix[row2+2]
-			b9 := pix[row2+4]
-			g9 := pix[row2+5]
-			r9 := pix[row2+6]
-			b10 := pix[row2+8]
-			g10 := pix[row2+9]
-			r10 := pix[row2+10]
-			b11 := pix[row2+12]
-			g11 := pix[row2+13]
-			r11 := pix[row2+14]
-
-			row3 := row2 + stride
-			b12 := pix[row3]
-			g12 := pix[row3+1]
-			r12 := pix[row3+2]
-			b13 := pix[row3+4]
-			g13 := pix[row3+5]
-			r13 := pix[row3+6]
-			b14 := pix[row3+8]
-			g14 := pix[row3+9]
-			r14 := pix[row3+10]
-			b15 := pix[row3+12]
-			g15 := pix[row3+13]
-			r15 := pix[row3+14]
-
-			i0 := maxRGB(r0, g0, b0)
-			i1 := maxRGB(r1, g1, b1)
-			i2 := maxRGB(r2, g2, b2)
-			i3 := maxRGB(r3, g3, b3)
-			i4 := maxRGB(r4, g4, b4)
-			i5 := maxRGB(r5, g5, b5)
-			i6 := maxRGB(r6, g6, b6)
-			i7 := maxRGB(r7, g7, b7)
-			i8 := maxRGB(r8, g8, b8)
-			i9 := maxRGB(r9, g9, b9)
-			i10 := maxRGB(r10, g10, b10)
-			i11 := maxRGB(r11, g11, b11)
-			i12 := maxRGB(r12, g12, b12)
-			i13 := maxRGB(r13, g13, b13)
-			i14 := maxRGB(r14, g14, b14)
-			i15 := maxRGB(r15, g15, b15)
-			threshold := uint8((uint16(i0) + uint16(i1) + uint16(i2) + uint16(i3) +
-				uint16(i4) + uint16(i5) + uint16(i6) + uint16(i7) +
-				uint16(i8) + uint16(i9) + uint16(i10) + uint16(i11) +
-				uint16(i12) + uint16(i13) + uint16(i14) + uint16(i15)) >> 4)
-
-			hash := uint64(0)
-			if i0 > threshold {
-				hash |= 1 << 15
-			}
-			if i1 > threshold {
-				hash |= 1 << 14
-			}
-			if i2 > threshold {
-				hash |= 1 << 13
-			}
-			if i3 > threshold {
-				hash |= 1 << 12
-			}
-			if i4 > threshold {
-				hash |= 1 << 11
-			}
-			if i5 > threshold {
-				hash |= 1 << 10
-			}
-			if i6 > threshold {
-				hash |= 1 << 9
-			}
-			if i7 > threshold {
-				hash |= 1 << 8
-			}
-			if i8 > threshold {
-				hash |= 1 << 7
-			}
-			if i9 > threshold {
-				hash |= 1 << 6
-			}
-			if i10 > threshold {
-				hash |= 1 << 5
-			}
-			if i11 > threshold {
-				hash |= 1 << 4
-			}
-			if i12 > threshold {
-				hash |= 1 << 3
-			}
-			if i13 > threshold {
-				hash |= 1 << 2
-			}
-			if i14 > threshold {
-				hash |= 1 << 1
-			}
-			if i15 > threshold {
-				hash |= 1
-			}
-
-			shapeID, _ := d.symbolRecognizer.RecognizeHash(hash)
-			colorID := d.recognizeCellColorBGRA4x4Fast(pix, stride, base, shapeID)
-			writeCellBits12(dst, cellIndex, (uint16(colorID)<<4)|uint16(shapeID))
-			cellIndex++
-		}
-	}
-}
-
-func (d *Decoder) recognizeCellColorBGRA4x4Fast(pix []byte, stride int, base int, shapeID symbol.SymbolID) colorpkg.ColorID {
-	if int(shapeID) >= len(d.foregroundIndex) {
-		return colorpkg.ColorID(0)
-	}
-	indexes := d.foregroundIndex[shapeID]
-	if len(indexes) == 0 {
-		return colorpkg.ColorID(0)
-	}
-	var sumR, sumG, sumB uint32
-	for _, idx := range indexes {
-		offset := base + int(idx/4)*stride + int(idx%4)*4
-		sumB += uint32(pix[offset])
-		sumG += uint32(pix[offset+1])
-		sumR += uint32(pix[offset+2])
-	}
-	count := uint32(len(indexes))
-	avg := color.RGBA{
-		R: uint8(sumR / count),
-		G: uint8(sumG / count),
-		B: uint8(sumB / count),
-		A: 255,
-	}
-	colorID, _ := d.colorRecognizer.RecognizeColorRGB(avg)
-	return colorID
 }
 
 func writeCellBits(dst []byte, cellIndex int, cellBits int, bits uint16) {
@@ -681,21 +510,6 @@ func writeCellBits(dst []byte, cellIndex int, cellBits int, bits uint16) {
 			dst[byteIndex] |= 1 << bitOffset
 		}
 		bitIndex++
-	}
-}
-
-func writeCellBits12(dst []byte, cellIndex int, bits uint16) {
-	byteIndex := (cellIndex / 2) * 3
-	if cellIndex%2 == 0 {
-		dst[byteIndex] = byte(bits >> 4)
-		if byteIndex+1 < len(dst) {
-			dst[byteIndex+1] |= byte(bits << 4)
-		}
-		return
-	}
-	dst[byteIndex+1] |= byte(bits >> 8)
-	if byteIndex+2 < len(dst) {
-		dst[byteIndex+2] = byte(bits)
 	}
 }
 
@@ -809,7 +623,6 @@ func (d *Decoder) extractCellsRGBA(img *image.RGBA, bounds image.Rectangle, numC
 
 func (d *Decoder) buildForegroundPixels() {
 	d.foregroundPixels = make([][]image.Point, d.symbolRecognizer.SymbolCount())
-	d.foregroundIndex = make([][]uint8, d.symbolRecognizer.SymbolCount())
 	for shapeID := 0; shapeID < d.symbolRecognizer.SymbolCount(); shapeID++ {
 		if !d.templatesReady[shapeID] {
 			continue
@@ -825,14 +638,6 @@ func (d *Decoder) buildForegroundPixels() {
 			}
 		}
 		d.foregroundPixels[shapeID] = pixels
-		if d.cellSize == d.tileWidth && d.cellSize == d.tileHeight {
-			indexes := make([]uint8, 0, len(pixels))
-			for _, p := range pixels {
-				idx := p.Y*d.tileWidth + p.X
-				indexes = append(indexes, uint8(idx))
-			}
-			d.foregroundIndex[shapeID] = indexes
-		}
 	}
 }
 
