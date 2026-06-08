@@ -57,6 +57,7 @@ type ScreenDecodeConfig struct {
 	CaptureBackend   string
 	DebugCapturePath string
 	Timeout          time.Duration
+	Verbose          bool
 	Progress         io.Writer
 	Stop             <-chan struct{}
 	Pause            <-chan bool
@@ -223,6 +224,9 @@ func DecodeScreenToFile(cfg ScreenDecodeConfig) error {
 }
 
 func DecodeScreenToPath(cfg ScreenDecodeConfig) (*WriteSourceResult, error) {
+	endTimerResolution := beginTimerResolution()
+	defer endTimerResolution()
+
 	if cfg.FPS <= 0 {
 		cfg.FPS = 30
 	}
@@ -321,6 +325,7 @@ func DecodeScreenToPath(cfg ScreenDecodeConfig) (*WriteSourceResult, error) {
 		interval = time.Millisecond
 	}
 	progress := newScreenDecoderProgress(cfg.Progress, blockSize)
+	progress.setVerbose(cfg.Verbose)
 	defer progress.finishLine()
 	isPaused, stopPause := newPauseFlag(cfg.Pause)
 	defer stopPause()
@@ -332,9 +337,10 @@ func DecodeScreenToPath(cfg ScreenDecodeConfig) (*WriteSourceResult, error) {
 	stopCapture := make(chan struct{})
 	captureDone := make(chan struct{})
 	cellName := CellSpecName(cfg.Tile, spec.ShapeBits, colorBits)
-	go runScreenCaptureLoop(capturer, interval, progress, frames, freeBuffers, captureErr, stopCapture, isPaused, cfg.DebugCapturePath, cellName, captureDone)
+	progress.setWorkerCount(len(decoders))
+	go runScreenCaptureLoop(capturer, interval, progress, frames, freeBuffers, captureErr, stopCapture, isPaused, cfg.DebugCapturePath, cellName, cfg.Verbose, captureDone)
 	decodeDone := make(chan struct{})
-	go runScreenDecodeWorkers(decoders, frames, decodedFrames, freeBuffers, progress, stopCapture, isPaused, decodeDone)
+	go runScreenDecodeWorkers(decoders, frames, decodedFrames, freeBuffers, progress, stopCapture, isPaused, cfg.Verbose, decodeDone)
 	defer func() {
 		close(stopCapture)
 		<-captureDone
@@ -376,21 +382,34 @@ func DecodeScreenToPath(cfg ScreenDecodeConfig) (*WriteSourceResult, error) {
 		encodedFrame := decoded.Data
 		packetBytes := packetCodec.EncodedSize()
 		for packetIndex := 0; packetIndex < packetsPerFrame; packetIndex++ {
+			var packetStart time.Time
+			if cfg.Verbose {
+				packetStart = time.Now()
+			}
 			start := packetIndex * packetBytes
 			end := start + packetBytes
 			if end > len(encodedFrame) {
 				progress.noteInvalid()
+				if cfg.Verbose {
+					progress.notePacketDuration(time.Since(packetStart))
+				}
 				continue
 			}
 			packet, err := packetCodec.DecodeInto(encodedFrame[start:end], packetBuf)
 			if err != nil {
 				progress.noteInvalid()
+				if cfg.Verbose {
+					progress.notePacketDuration(time.Since(packetStart))
+				}
 				continue
 			}
 			packetBuf = packet
 			frame, err := ParsePacket(packet, blockSize)
 			if err != nil {
 				progress.noteInvalid()
+				if cfg.Verbose {
+					progress.notePacketDuration(time.Since(packetStart))
+				}
 				continue
 			}
 			if fountainDec == nil {
@@ -398,23 +417,38 @@ func DecodeScreenToPath(cfg ScreenDecodeConfig) (*WriteSourceResult, error) {
 				blockCount = blockCountForFile(fileSize, blockSize)
 				fountainDec, err = fountain.NewDecoder(fileSize, blockSize, blockCount)
 				if err != nil {
+					if cfg.Verbose {
+						progress.notePacketDuration(time.Since(packetStart))
+					}
 					return nil, err
 				}
 				progress.noteStarted(fileSize, blockCount)
 			} else if frame.FileSize != fileSize {
 				progress.noteInvalid()
+				if cfg.Verbose {
+					progress.notePacketDuration(time.Since(packetStart))
+				}
 				continue
 			}
 			if _, ok := seenFrameIDs[frame.FrameID]; ok {
 				progress.noteValid(fountainDec.Rank(), false, true)
+				if cfg.Verbose {
+					progress.notePacketDuration(time.Since(packetStart))
+				}
 				continue
 			}
 			seenFrameIDs[frame.FrameID] = struct{}{}
 			added, err := fountainDec.AddFrame(frame.FrameID, frame.Payload)
 			if err != nil {
+				if cfg.Verbose {
+					progress.notePacketDuration(time.Since(packetStart))
+				}
 				return nil, fmt.Errorf("add captured frame: %w", err)
 			}
 			progress.noteValid(fountainDec.Rank(), added, false)
+			if cfg.Verbose {
+				progress.notePacketDuration(time.Since(packetStart))
+			}
 			if fountainDec.Complete() {
 				progress.noteComplete()
 				result, err := fountainDec.Decode()
@@ -487,7 +521,7 @@ func stopTimer(timer *time.Timer) {
 	}
 }
 
-func runScreenCaptureLoop(capturer *screenCapturer, interval time.Duration, progress *screenDecoderProgress, frames chan *capturedScreenFrame, freeBuffers chan []byte, captureErr chan<- error, stop <-chan struct{}, isPaused func() bool, debugCaptureDir string, debugCaptureCell string, done chan<- struct{}) {
+func runScreenCaptureLoop(capturer *screenCapturer, interval time.Duration, progress *screenDecoderProgress, frames chan *capturedScreenFrame, freeBuffers chan []byte, captureErr chan<- error, stop <-chan struct{}, isPaused func() bool, debugCaptureDir string, debugCaptureCell string, verbose bool, done chan<- struct{}) {
 	defer close(done)
 	nextCapture := time.Now()
 	var buf []byte
@@ -520,7 +554,14 @@ func runScreenCaptureLoop(capturer *screenCapturer, interval time.Duration, prog
 			buf = nil
 		}
 
+		var captureStart time.Time
+		if verbose {
+			captureStart = time.Now()
+		}
 		frame, err := capturer.CaptureFrame(buf)
+		if verbose {
+			progress.noteCaptureDuration(time.Since(captureStart))
+		}
 		if err != nil {
 			select {
 			case captureErr <- err:
@@ -540,7 +581,7 @@ func runScreenCaptureLoop(capturer *screenCapturer, interval time.Duration, prog
 				return
 			}
 			debugCaptureCount++
-			if progress.out != nil {
+			if progress != nil && progress.out != nil {
 				fmt.Fprintf(progress.out, "debug capture saved: %s\n", path)
 			}
 		}
@@ -550,12 +591,18 @@ func runScreenCaptureLoop(capturer *screenCapturer, interval time.Duration, prog
 		default:
 			select {
 			case old := <-frames:
+				if verbose {
+					progress.noteQueueDrop()
+				}
 				recycleCapturedFrame(old, freeBuffers)
 			default:
 			}
 			select {
 			case frames <- frame:
 			default:
+				if verbose {
+					progress.noteQueueDrop()
+				}
 				recycleCapturedFrame(frame, freeBuffers)
 			}
 		}
@@ -567,7 +614,7 @@ type decodedScreenFrame struct {
 	Err  error
 }
 
-func runScreenDecodeWorkers(decoders []frameDecoder, frames <-chan *capturedScreenFrame, decoded chan<- decodedScreenFrame, freeBuffers chan<- []byte, progress *screenDecoderProgress, stop <-chan struct{}, isPaused func() bool, done chan<- struct{}) {
+func runScreenDecodeWorkers(decoders []frameDecoder, frames <-chan *capturedScreenFrame, decoded chan<- decodedScreenFrame, freeBuffers chan<- []byte, progress *screenDecoderProgress, stop <-chan struct{}, isPaused func() bool, verbose bool, done chan<- struct{}) {
 	var wg sync.WaitGroup
 	wg.Add(len(decoders))
 	for _, dec := range decoders {
@@ -589,7 +636,14 @@ func runScreenDecodeWorkers(decoders []frameDecoder, frames <-chan *capturedScre
 						recycleCapturedFrame(captured, freeBuffers)
 						return
 					}
+					var decodeStart time.Time
+					if verbose {
+						decodeStart = time.Now()
+					}
 					encodedFrame, err := decodeCapturedFrame(dec, captured, frameBuf)
+					if verbose {
+						progress.noteDecodeDuration(time.Since(decodeStart))
+					}
 					recycleCapturedFrame(captured, freeBuffers)
 					if err != nil {
 						progress.noteInvalid()

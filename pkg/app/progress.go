@@ -192,16 +192,32 @@ type screenDecoderProgress struct {
 	useful            uint64
 	duplicate         uint64
 	invalid           uint64
+	queueDropped      uint64
 	lastCaptured      uint64
 	lastDecoded       uint64
 	lastValid         uint64
 	lastUseful        uint64
 	lastDuplicate     uint64
 	lastInvalid       uint64
+	lastQueueDropped  uint64
 	lastRecoveredByte int
+	captureDuration   time.Duration
+	decodeDuration    time.Duration
+	packetDuration    time.Duration
+	captureSamples    uint64
+	decodeSamples     uint64
+	packetSamples     uint64
+	lastCaptureDur    time.Duration
+	lastDecodeDur     time.Duration
+	lastPacketDur     time.Duration
+	lastCaptureSample uint64
+	lastDecodeSample  uint64
+	lastPacketSample  uint64
+	workerCount       int
 	smoothKB          float64
 	completed         bool
 	headerPrinted     bool
+	verbose           bool
 	mu                sync.Mutex
 }
 
@@ -219,6 +235,24 @@ func newScreenDecoderProgress(out io.Writer, blockSize int) *screenDecoderProgre
 	}
 }
 
+func (p *screenDecoderProgress) setVerbose(verbose bool) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.verbose = verbose
+}
+
+func (p *screenDecoderProgress) setWorkerCount(workers int) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.workerCount = workers
+}
+
 func (p *screenDecoderProgress) noteCaptured() {
 	if p == nil {
 		return
@@ -227,6 +261,46 @@ func (p *screenDecoderProgress) noteCaptured() {
 	defer p.mu.Unlock()
 	p.captured++
 	p.render(false)
+}
+
+func (p *screenDecoderProgress) noteQueueDrop() {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.queueDropped++
+	p.render(false)
+}
+
+func (p *screenDecoderProgress) noteCaptureDuration(d time.Duration) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.captureDuration += d
+	p.captureSamples++
+}
+
+func (p *screenDecoderProgress) noteDecodeDuration(d time.Duration) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.decodeDuration += d
+	p.decodeSamples++
+}
+
+func (p *screenDecoderProgress) notePacketDuration(d time.Duration) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.packetDuration += d
+	p.packetSamples++
 }
 
 func (p *screenDecoderProgress) noteDecoded() {
@@ -332,6 +406,16 @@ func (p *screenDecoderProgress) render(force bool) {
 	usefulFPS := float64(p.useful-p.lastUseful) / window.Seconds()
 	duplicateFPS := float64(p.duplicate-p.lastDuplicate) / window.Seconds()
 	invalidFPS := float64(p.invalid-p.lastInvalid) / window.Seconds()
+	var queueDropFPS float64
+	var captureMS float64
+	var decodeMS float64
+	var packetMS float64
+	if p.verbose {
+		queueDropFPS = float64(p.queueDropped-p.lastQueueDropped) / window.Seconds()
+		captureMS = averageDurationMS(p.captureDuration-p.lastCaptureDur, p.captureSamples-p.lastCaptureSample)
+		decodeMS = averageDurationMS(p.decodeDuration-p.lastDecodeDur, p.decodeSamples-p.lastDecodeSample)
+		packetMS = averageDurationMS(p.packetDuration-p.lastPacketDur, p.packetSamples-p.lastPacketSample)
+	}
 	recovered := p.recoveredBytes()
 	currentKB := float64(recovered-p.lastRecoveredByte) / window.Seconds() / 1024
 	if currentKB < 0 {
@@ -351,8 +435,13 @@ func (p *screenDecoderProgress) render(force bool) {
 
 	if p.fileSize < 0 {
 		p.printHeader()
-		fmt.Fprintf(p.out, "wait cap=%4.0f dec=%4.0f pkt v/r/u=%4.0f/%4.0f/%4.0f bad=%4.0f bad_total=%d t=%s\n",
+		fmt.Fprintf(p.out, "wait cap=%4.0f dec=%4.0f pkt v/r/u=%4.0f/%4.0f/%4.0f bad=%4.0f bad_total=%d t=%s",
 			captureFPS, decodeFPS, validFPS, duplicateFPS, usefulFPS, invalidFPS, p.invalid, shortDuration(elapsed))
+		if p.verbose {
+			fmt.Fprintf(p.out, " cap_ms=%5.2f dec_ms=%5.2f pkt_ms=%5.2f qdrop=%4.0f workers=%d",
+				captureMS, decodeMS, packetMS, queueDropFPS, p.workerCount)
+		}
+		fmt.Fprintln(p.out)
 	} else {
 		p.printHeader()
 		progress := 1.0
@@ -369,10 +458,15 @@ func (p *screenDecoderProgress) render(force bool) {
 		} else if recovered >= p.fileSize {
 			eta = "0s"
 		}
-		fmt.Fprintf(p.out, "%s cap=%4.0f dec=%4.0f pkt v/r/u=%4.0f/%4.0f/%4.0f bad=%4.0f spd=%6.0f ema=%6.0fKB/s data=%s/%s rank=%d/%d t=%s eta=%s\n",
+		fmt.Fprintf(p.out, "%s cap=%4.0f dec=%4.0f pkt v/r/u=%4.0f/%4.0f/%4.0f bad=%4.0f spd=%6.0f ema=%6.0fKB/s data=%s/%s rank=%d/%d t=%s eta=%s",
 			progressBar(progress, 18), captureFPS, decodeFPS, validFPS, duplicateFPS, usefulFPS, invalidFPS, currentKB, p.smoothKB,
 			formatBytes(recovered), formatBytes(p.fileSize), p.rank, p.blockCount,
 			shortDuration(transferElapsed), eta)
+		if p.verbose {
+			fmt.Fprintf(p.out, " cap_ms=%5.2f dec_ms=%5.2f pkt_ms=%5.2f qdrop=%4.0f workers=%d",
+				captureMS, decodeMS, packetMS, queueDropFPS, p.workerCount)
+		}
+		fmt.Fprintln(p.out)
 	}
 
 	p.last = now
@@ -382,7 +476,14 @@ func (p *screenDecoderProgress) render(force bool) {
 	p.lastUseful = p.useful
 	p.lastDuplicate = p.duplicate
 	p.lastInvalid = p.invalid
+	p.lastQueueDropped = p.queueDropped
 	p.lastRecoveredByte = recovered
+	p.lastCaptureDur = p.captureDuration
+	p.lastDecodeDur = p.decodeDuration
+	p.lastPacketDur = p.packetDuration
+	p.lastCaptureSample = p.captureSamples
+	p.lastDecodeSample = p.decodeSamples
+	p.lastPacketSample = p.packetSamples
 }
 
 func (p *screenDecoderProgress) printHeader() {
@@ -391,6 +492,9 @@ func (p *screenDecoderProgress) printHeader() {
 	}
 	p.headerPrinted = true
 	fmt.Fprintln(p.out, "fields: cap=capture fps, dec=cell decode fps, pkt v/r/u=valid/repeat/useful packet fps, bad=invalid packet fps, spd=current KB/s, ema=smoothed KB/s")
+	if p.verbose {
+		fmt.Fprintln(p.out, "verbose: cap_ms=avg CaptureFrame time, dec_ms=avg cell decode time, pkt_ms=avg packet/ECC/fountain time, qdrop=dropped capture frames per second, workers=decode worker count")
+	}
 }
 
 func (p *screenDecoderProgress) recoveredBytes() int {
@@ -402,6 +506,13 @@ func (p *screenDecoderProgress) recoveredBytes() int {
 		recovered = p.fileSize
 	}
 	return recovered
+}
+
+func averageDurationMS(total time.Duration, samples uint64) float64 {
+	if samples == 0 {
+		return 0
+	}
+	return float64(total) / float64(samples) / float64(time.Millisecond)
 }
 
 func progressBar(progress float64, width int) string {

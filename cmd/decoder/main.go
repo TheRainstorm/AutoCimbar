@@ -35,6 +35,7 @@ func main() {
 	decodeWorkers := fs.Int("decode-workers", 0, "parallel screen decode workers, 0 chooses automatically")
 	captureBackend := fs.String("capture-backend", app.CaptureBackendAuto, "screen capture backend: auto, dxgi, or gdi")
 	debugCapture := fs.String("debug-capture", "", "directory for first 60 captured frames; files are named <cell>_NNN.png")
+	verbose := fs.Bool("v", false, "print verbose decoder performance diagnostics")
 	listDisplays := fs.Bool("list-displays", false, "list detected display indexes and bounds")
 	symbolDir := fs.String("symbols", app.DefaultSymbolDir, "optional directory containing symbol PNG files named 00.png..; empty uses built-in symbols")
 	symbolDirShort := fs.String("s", "", "short alias for -symbols")
@@ -91,6 +92,7 @@ func main() {
 			Mode: "screen", Input: *input, Output: *output, Backend: *backend, Q: *q, RQ: *rq, ResolvedQ: gridSize, Scale: *b,
 			Tile: *tile, ShapeBits: *shapeBits, ColorBits: *colorBits, Cell: *cell, ECC: *eccPercent, Packets: *packetsPerFrame,
 			Region: *region, FPS: *fps, CaptureBackend: *captureBackend, DebugCapture: *debugCapture, DecodeWorkers: *decodeWorkers,
+			Verbose: *verbose,
 		})
 		writeResult, err := app.DecodeScreenToPath(app.ScreenDecodeConfig{
 			OutputPath:       *output,
@@ -108,6 +110,7 @@ func main() {
 			DecodeWorkers:    *decodeWorkers,
 			CaptureBackend:   *captureBackend,
 			DebugCapturePath: *debugCapture,
+			Verbose:          *verbose,
 			Progress:         os.Stderr,
 		})
 		if err != nil {
@@ -137,6 +140,7 @@ func main() {
 		Mode: "png", Input: *input, Output: *output, Backend: *backend, Q: *q, RQ: *rq, ResolvedQ: gridSize, Scale: *b,
 		Tile: *tile, ShapeBits: *shapeBits, ColorBits: *colorBits, Cell: *cell, ECC: *eccPercent, Packets: *packetsPerFrame,
 		Region: *region, FPS: *fps, CaptureBackend: *captureBackend, DebugCapture: *debugCapture, DecodeWorkers: *decodeWorkers,
+		Verbose: *verbose,
 	})
 	writeResult, err := app.DecodePNGFramesToPathWithBackend(*input, *output, gridSize, *b, *symbolDir, 0, *eccPercent, *colorBits, spec, *backend)
 	if err != nil {
@@ -172,6 +176,7 @@ type runtimeConfig struct {
 	CaptureBackend string
 	DebugCapture   string
 	DecodeWorkers  int
+	Verbose        bool
 }
 
 func printRuntimeConfig(out *os.File, cfg runtimeConfig) {
@@ -183,6 +188,9 @@ func printRuntimeConfig(out *os.File, cfg runtimeConfig) {
 		cfg.Backend, cell, cfg.ECC, cfg.Packets)
 	fmt.Fprintf(out, "decoder runtime: mode=%s input=%q output=%q RQ=%d Q=%d resolved_Q=%d B=%d fps=%d region=%s capture_backend=%s debug_capture=%q workers=%d\n",
 		cfg.Mode, cfg.Input, cfg.Output, cfg.RQ, cfg.Q, cfg.ResolvedQ, cfg.Scale, cfg.FPS, cfg.Region, cfg.CaptureBackend, cfg.DebugCapture, cfg.DecodeWorkers)
+	if cfg.Verbose {
+		fmt.Fprintln(out, "decoder verbose: enabled")
+	}
 }
 
 func shortAliases() map[string][]string {
@@ -219,6 +227,7 @@ func installUsage(fs *flag.FlagSet) {
 		printOption(fs, "-capture-backend", "auto|dxgi|gdi", "Screen capture backend. DXGI is fastest, but HDR/color-managed displays can break high color-bit modes; use SDR or GDI when colors do not decode.")
 		printOption(fs, "-debug-capture", "DIR", "Save the first 60 captured frames as DIR/<cell>_NNN.png; creates DIR when missing.")
 		printOption(fs, "-decode-workers", "N", "Parallel screen decode workers, 0 chooses automatically.")
+		printOption(fs, "-v", "", "Print verbose decoder diagnostics: capture/decode/packet milliseconds, queue drops, and worker count.")
 		fmt.Fprintln(fs.Output())
 		fmt.Fprintln(fs.Output(), "PNG and advanced options:")
 		printOption(fs, "-png", "", "Read PNG frames instead of screen capture mode.")
