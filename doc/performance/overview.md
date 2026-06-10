@@ -1,6 +1,6 @@
 # AutoCambar 性能优化报告
 
-本文总结近期为屏幕单向传输链路做的性能和可靠性优化，重点解释 encoder 从达不到 60 fps 到可以冲高帧率、decoder 截屏/解码帧率提升，以及最终吞吐受 `valid_fps`、ECC、颜色通道、`-packets` 等因素影响的原因。
+本文总结近期为屏幕单向传输链路做的性能和可靠性优化，重点解释 encoder 从达不到 60 fps 到可以冲高帧率、decoder 截屏/解码帧率提升，以及最终吞吐受 `pkt v/r/u`、ECC、颜色通道、`-packets` 等因素影响的原因。
 
 ## 1. 总体瓶颈变化
 
@@ -84,7 +84,7 @@ encoder 进度从单一 `encode_fps` 改为：
 
 早期截图路径会产生额外图像对象和拷贝。改成 DIB section 后，`BitBlt` 直接写入可访问的内存 buffer。
 
-效果：降低 capture 端每帧开销，是 `capture_fps` 提升的基础。
+效果：降低 capture 端每帧开销，是 `cap` 提升的基础。
 
 ### 3.2 直接解码 BGRA 截屏缓冲
 
@@ -106,8 +106,8 @@ Windows 截屏拿到的是 BGRA。优化后 decoder 不再把截图转换成 Go 
 
 效果：
 
-- `capture_fps` 更真实，表示截图能力。
-- `decode_fps` 表示解码处理能力。
+- `cap` 更真实，表示截图能力。
+- `dec` 表示 decoder pipeline 消费截图的能力，包含真实 cell decode 和相同截图跳过。
 - 当 decoder 慢于 capture 时，不积压过期帧。
 
 ### 3.4 解码输出缓冲复用
@@ -142,28 +142,29 @@ Windows 截屏拿到的是 BGRA。优化后 decoder 不再把截图转换成 Go 
 吞吐 ~= 新增独立 packet fps * 每 packet fountain payload
 ```
 
-因此仅有 `capture_fps` 或 `decode_fps` 高还不够，还必须提高：
+因此仅有 `cap` 或 `dec` 高还不够，还必须提高：
 
-- `valid_fps`：通过单帧 ECC/帧头解析的 packet 数。
-- `valid_fps` 后半部分：真正新增喷泉码秩的 packet 数。
+- `pkt valid`：通过单帧 ECC/CRC/帧头解析的 packet 数。
+- `pkt useful`：真正新增喷泉码秩的 packet 数。
+- `pkt repeat`：重复 packet 或相同截图跳过越多，实际吞吐越低。
 - 每个 packet 的有效 payload。
 - decoder 最终 MD5 校验通过率。
 
-## 5. valid_fps 与新增帧速率
+## 5. packet 指标与新增帧速率
 
 提交：`f6ca32f feat: 支持多档颜色通道并区分新增帧速率`
 
 decoder 现在显示：
 
 ```text
-valid_fps=通过校验packet/新增独立packet
+pkt v/r/u=valid/repeat-or-same/useful
 ```
 
 原因：
 
 - 当 decoder fps 高于 encoder fps 时，会重复截到同一张图。
-- 旧的 valid fps 会把重复数据也算进去，导致高估实际吞吐。
-- 现在同一个 `frame_id` 重复出现时，仍可统计为 valid，但不会进入喷泉码消元，也不会算作新增独立 packet。
+- 相同截图会在 cell decode 前跳过，并合并到 `dec` 和 `pkt repeat` 显示中，便于判断 decoder pipeline 是否是瓶颈。
+- 同一个 `frame_id` 重复出现时，仍可统计为 valid，但不会进入喷泉码消元，也不会算作 useful packet。
 
 效果：进度显示更接近真实传输速度，也减少重复帧进入喷泉矩阵消元的 CPU 开销。
 
@@ -253,7 +254,7 @@ valid_fps=通过校验packet/新增独立packet
 ./bin/decoder.exe -screen -o out.bin -Q 160 -B 1 -R 3:-0:-0 -fps 120 -ecc 10 -packets 2
 ```
 
-如果 `valid_fps` 稳定，再试：
+如果 `pkt valid` 和 `pkt useful` 稳定，再试：
 
 ```bash
 -packets 4
@@ -300,7 +301,7 @@ valid_fps=通过校验packet/新增独立packet
 观察指标：
 
 - encoder：`frame_fps`、`packet_fps`、`refresh_fps`
-- decoder：`capture_fps`、`decode_fps`、`valid_fps=a/b`
+- decoder：`cap`、`dec`、`pkt v/r/u`、`bad`、`spd`、`ema`
 - 端到端：`speed KB/s`、最终 MD5
 
 ## 11. 后续优化方向

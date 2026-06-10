@@ -6,6 +6,13 @@ AutoCimBar is a one-way file transfer tool that uses the screen channel of a rem
 
 [中文 README](README.md)
 
+## Documentation
+
+- [Documentation index](doc/README.md): organized by user guide, performance analysis, implementation notes, research notes, and archived legacy notes.
+- [Performance overview](doc/performance/overview.md): encoder/decoder, ECC, packets, zstd, and MD5 optimization history.
+- [Decoder pipeline and metrics](doc/performance/decoder-pipeline.md): exact meaning of `cap`, `dec`, `pkt v/r/u`, and `-v` diagnostics.
+- [DXGI capture backend](doc/performance/dxgi-capture.md): DXGI/GDI differences, HDR limitations, and rotated display handling.
+
 ## Experimental Results
 
 Current measurements over an RDP remote session:
@@ -199,17 +206,19 @@ With the QR backend, `-Q` maps to the closest QR version. Real QR module count m
 The decoder appends one progress line per second so logs can be saved and analyzed later:
 
 ```text
-fields: cap=capture fps, dec=cell decode fps, pkt v/r/u=valid/repeat/useful packet fps, bad=invalid packet fps, spd=current KB/s, ema=smoothed KB/s
+fields: cap=capture fps, dec=decoder-consumed fps, pkt v/r/u=valid/repeat-or-same/useful packet fps, bad=invalid packet fps, spd=current KB/s, ema=smoothed KB/s
 ```
 
 Meaning:
 
 - `cap`: capture FPS
-- `dec`: completed cell decode FPS
-- `pkt v/r/u`: valid packets / repeated packets / useful packets that increase fountain rank
+- `dec`: FPS of captures consumed by the decoder pipeline, including real cell decode and identical-capture skips
+- `pkt v/r/u`: valid packets / repeated packets or identical-capture skips / useful packets that increase fountain rank
 - `bad`: packets rejected by CRC, ECC, parameter mismatch, or parse failure
 - `spd`: current-window speed
 - `ema`: smoothed recent speed
+
+With `-v`, `dec_ms` still measures only real cell decode time and does not include identical-capture skips.
 
 The final decoder summary measures transfer time from the first valid frame, excluding time spent waiting for the encoder to start.
 

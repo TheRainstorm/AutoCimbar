@@ -6,6 +6,13 @@ AutoCimBar 是一个利用远程桌面（或串流画面）的屏幕信道，进
 
 [English README](README.en.md)
 
+## 文档导航
+
+- [文档索引](doc/README.md)：按用户指南、性能分析、实现笔记、研究资料和历史归档组织。
+- [性能优化总览](doc/performance/overview.md)：encoder/decoder、ECC、packets、zstd、MD5 等优化记录。
+- [Decoder pipeline 与指标](doc/performance/decoder-pipeline.md)：`cap`、`dec`、`pkt v/r/u`、`-v` 诊断指标的准确含义。
+- [DXGI 截图后端](doc/performance/dxgi-capture.md)：DXGI/GDI 后端差异、HDR 限制和旋转屏处理。
+
 ## 实验结果
 
 以下为当前 RDP 远程实测结果：
@@ -199,17 +206,19 @@ QR backend 下，`-Q` 会映射到最接近的 QR version。QR 的真实模块�
 decoder 每秒追加一行日志，方便保存后分析：
 
 ```text
-fields: cap=capture fps, dec=cell decode fps, pkt v/r/u=valid/repeat/useful packet fps, bad=invalid packet fps, spd=current KB/s, ema=smoothed KB/s
+fields: cap=capture fps, dec=decoder-consumed fps, pkt v/r/u=valid/repeat-or-same/useful packet fps, bad=invalid packet fps, spd=current KB/s, ema=smoothed KB/s
 ```
 
 含义：
 
 - `cap`：截图 FPS
-- `dec`：完成 cell decode 的 FPS
-- `pkt v/r/u`：有效 packet / 重复 packet / 实际提升喷泉码 rank 的 useful packet
+- `dec`：decoder 消费截图的 FPS，包含真实 cell decode 和相同截图跳过
+- `pkt v/r/u`：有效 packet / 重复 packet 或相同截图跳过 / 实际提升喷泉码 rank 的 useful packet
 - `bad`：CRC、ECC、参数或解析失败的 packet
 - `spd`：当前窗口速度
 - `ema`：近期滑动速度
+
+使用 `-v` 时，`dec_ms` 仍只统计真实 cell decode 的平均耗时，不包含相同截图跳过。
 
 完成后 decoder 会输出 summary，总时间从首个有效帧开始计算，不包含等待 encoder 启动的时间。
 

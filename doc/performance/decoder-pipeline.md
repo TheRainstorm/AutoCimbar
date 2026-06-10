@@ -3,10 +3,11 @@
 本文说明当前 screen decoder 的实际执行流程，以及 `cap`、`dec`、`valid/useful` 等指标分别表示什么。结论先行：
 
 - `runScreenCaptureLoop` 中的 timer 只直接影响截图调度，也就是 `cap`。
-- `dec` 是 cell decode 成功的帧率，受截图供给速率和单帧解码耗时共同限制。
+- `dec` 是 decoder pipeline 消费截图的帧率，包含真实 cell decode 和相同截图跳过。
+- `dec_ms` 才是真实 `decodeCapturedFrame` 的平均耗时，不包含相同截图跳过。
 - 如果 `cap` 已经能稳定到 120 fps，则当前场景没有被 Windows 默认 15.6 ms timer 精度卡在 64 fps。
 - 如果目标是 `-f 160`，但 `cap` 在无明显截图耗时瓶颈时卡在约 60-70 fps，才需要优先怀疑 timer resolution。
-- `cap` 高不代表 `dec` 一定高；`dec` 还会被 tile/cell 解码成本、颜色位数、shape 位数、RQ 区域大小、decode worker 数量、内存复制和 packet 校验成本影响。
+- `cap` 高不代表 useful 一定高；`dec` 接近 `cap` 只能说明 decoder pipeline 没积压，还要继续看 `pkt v/r/u`、`bad`、`dec_ms` 和 `pkt_ms`。
 
 ## 相关代码位置
 
@@ -29,10 +30,10 @@ cap=... dec=... pkt v/r/u=.../.../... bad=... spd=... ema=...
 | 指标 | 计数位置 | 含义 |
 | --- | --- | --- |
 | `cap` | `progress.noteCaptured()` | `capturer.CaptureFrame` 成功返回后的截图帧率 |
-| `dec` | `progress.noteDecoded()` | `decodeCapturedFrame` 成功完成 cell decode 的帧率 |
+| `dec` | `progress.noteDecoded()` + `progress.noteSameCaptured()` | decoder pipeline 消费截图的帧率，包含真实 cell decode 和相同截图跳过 |
 | `bad` | `progress.noteInvalid()` | cell decode 失败、ECC/CRC/packet parse 失败等无效 packet/帧的速率 |
 | `pkt valid` | `progress.noteValid(...)` | packet 通过 ECC/CRC/header 解析后的速率 |
-| `pkt repeat` | `noteValid(... duplicate=true)` | frame id 已接收过的重复 packet 速率 |
+| `pkt repeat` | `noteValid(... duplicate=true)` + `noteSameCaptured()` | frame id 已接收过的重复 packet，加上相同截图跳过 |
 | `pkt useful` | `noteValid(... added=true)` | fountain rank 实际增长的 packet 速率 |
 | `spd` | `rank * blockSize` 的窗口增量 | 最近窗口内恢复出的源数据速度 |
 | `ema` | `spd` 的指数滑动平均 | 平滑后的近期速度 |
@@ -40,8 +41,9 @@ cap=... dec=... pkt v/r/u=.../.../... bad=... spd=... ema=...
 因此：
 
 - `cap` 看的是“截图是否拿到了图像”。
-- `dec` 看的是“截图图像是否成功识别成一帧 codec payload”。
+- `dec` 看的是“decoder pipeline 是否消费了截图”，跳过相同截图也算消费。
 - `valid/useful` 看的是“payload 是否能通过 packet/ECC/CRC，并对 fountain 恢复有贡献”。
+- `dec_ms` 看真实 cell decode 成本。若 `cap` 和 `dec` 接近，但 `dec_ms` 很高，说明重复帧跳过掩盖了真实解码成本。
 
 ## 当前伪代码
 
@@ -122,6 +124,12 @@ func runScreenCaptureLoop(interval) {
         frame = capturer.CaptureFrame(buf)    // GDI BitBlt 或 DXGI capture/crop
         noteCaptured()                        // cap 在这里加 1
 
+        if same as previous captured frame {
+            noteSameCaptured()                // dec 和 pkt repeat 显示中都会体现
+            recycle frame
+            continue
+        }
+
         if debug enabled {
             save png
         }
@@ -157,7 +165,7 @@ func runScreenDecodeWorkers(decoders) {
                     continue
                 }
 
-                noteDecoded()                 // dec 在这里加 1
+                noteDecoded()                 // 真实 cell decode 成功
                 decoded <- copy(encodedFrame)
             }
         }()
@@ -165,13 +173,13 @@ func runScreenDecodeWorkers(decoders) {
 }
 ```
 
-`dec` 的上限是：
+真实 cell decode 的上限是：
 
 ```text
 min(capture 供给速率, 所有 decode workers 的处理能力, decodedFrames 消费能力)
 ```
 
-所以你的理解是对的：`dec` 一方面受截图速率影响，另一方面受解码时间影响。除此之外还有通道背压、内存复制、packet 处理等次要因素。
+显示出来的 `dec` 会额外合并相同截图跳过，因此它更适合判断 decoder pipeline 是否消费及时。真实解码成本要看 `-v` 下的 `dec_ms`，以及 `cap - dec`、`qdrop` 是否升高。
 
 ## Windows timer 精度到底影响哪里
 
@@ -197,7 +205,7 @@ Windows 默认 timer resolution 常见约 15.6 ms。如果进程没有通过 `ti
 单次 decodeCapturedFrame 的 CPU 耗时
 ```
 
-但是因为 decode worker 没有截图输入就不能工作，所以当 `cap` 被 timer 卡住时，`dec` 也会间接受限：
+但是因为 decoder pipeline 没有截图输入就不能工作，所以当 `cap` 被 timer 卡住时，`dec` 也会间接受限：
 
 ```text
 timer 粒度太粗 -> cap 上不去 -> dec 没有足够输入 -> dec 也上不去
@@ -226,7 +234,7 @@ cap ~= dec ~= 60-70 fps
 目标 fps 高于 120/160
 cap 是否贴近 64 fps
 单帧 CaptureFrame 是否明显小于 interval
-decode workers 是否空闲或 dec ~= cap
+decoder pipeline 是否空闲或 dec ~= cap
 ```
 
 如果 `cap=120` 且目标就是 `-f 120`，timer 精度不是当前瓶颈。
@@ -248,20 +256,29 @@ decode workers 是否空闲或 dec ~= cap
 5. debug capture：
    - 保存 PNG 会显著降低 cap，只用于临时调试
 
-## 影响 dec 的因素
+## 影响 dec 和 dec_ms 的因素
 
-`dec` 主要受这些因素影响：
+`dec` 是 pipeline 消费速率，主要受这些因素影响：
 
-1. `cap` 供给速率：没有截图输入，decode worker 无法产生 `dec`。
-2. `decodeCapturedFrame` 单帧成本：
+1. `cap` 供给速率：没有截图输入，decoder pipeline 无法产生 `dec`。
+2. 相同截图跳过：encoder 刷新低于 decoder 截图时，重复截图会被快速跳过并计入 `dec` 和 `pkt repeat`。
+3. frames channel 丢帧：队列满时会丢旧帧，`qdrop` 升高，`dec` 可能低于 `cap`。
+4. 主循环消费速度：packet/ECC/fountain 处理太慢时也可能造成背压。
+
+`dec_ms` 才主要反映真实 cell decode 成本：
+
+1. `decodeCapturedFrame` 单帧成本：
    - grid cell 数量约随 `Q^2` 增长
    - tile 越小，cell 数越多
    - shape bits 越高，符号识别候选更多或判别成本更高
    - color bits 越高，颜色判决更敏感，错误率也可能上升
-3. decode worker 数量：
+2. decode worker 数量：
    - 当前默认 `runtime.NumCPU()/2`，最多 4
-   - worker 太少会让 `dec < cap`
+   - worker 太少会让真实 cell decode 跟不上输入
    - worker 太多可能引入内存带宽和调度开销
+3. codec 内部并行 cell 解码：
+   - 大帧会在 `DecodeBGRAInto` / `DecodeInto` 内按 cell 区间并行
+   - 分片边界按 byte 对齐，避免 bit-packed 输出竞争
 4. 内存复制：
    - decode 成功后会 `append([]byte(nil), encodedFrame...)` 复制 payload
    - 大 `RQ`、多 packet 时 payload 更大
@@ -271,7 +288,7 @@ decode workers 是否空闲或 dec ~= cap
    - fountain AddFrame
    - seen frame id map 查询
 
-注意：`bad` 过高时，`dec` 仍可能很高。因为 `dec` 只说明 cell payload 识别成功；packet 之后 CRC/ECC 失败会统计到 `bad`，不会回退 `dec`。
+注意：`bad` 过高时，`dec` 仍可能很高。因为 `dec` 只说明 decoder pipeline 消费了截图；packet 之后 CRC/ECC 失败会统计到 `bad`，不会回退 `dec`。
 
 ## 如何判断当前瓶颈
 
@@ -296,12 +313,14 @@ cap=60 dec=58
 cap=160 dec=80
 ```
 
-优先看 decode 侧：
+优先看 pipeline 侧：
 
-- cell decode CPU 成本
-- decode workers 数量
-- tile/cell 配置是否太重
-- 内存带宽和复制
+- `qdrop` 是否升高
+- packet 主循环是否慢，`pkt_ms` 是否高
+- debug capture 是否开启
+- capture 之后是否有背压或内存复制瓶颈
+
+如果 `cap` 和 `dec` 接近，但 `dec_ms` 很高，说明当前没有积压可能是因为相同截图跳过或 encoder 刷新较低；提高 encoder fps、降低重复帧后，真实 cell decode 仍可能成为瓶颈。
 
 ### 3. cap 和 dec 都高，但 useful 低
 
@@ -312,6 +331,7 @@ cap=120 dec=118 pkt valid=80 repeat=40 useful=40 bad=0
 优先看传输效率：
 
 - decoder fps 高于 encoder fps，重复帧多
+- 相同截图跳过多，`repeat` 会升高
 - fountain 有重复 frame id
 - packets/frame、encoder fps、decoder fps 不匹配
 
@@ -363,6 +383,7 @@ cap=120 dec=115 bad=80 useful=20
 有了这些指标后，可以直接判断：
 
 ```text
-cap 低是 timer wait、CaptureFrame 慢，还是 queue/drop 行为导致；
-dec 低是 worker 算不过来，还是主循环消费慢。
+cap 低是 timer wait、CaptureFrame 慢，还是截图后处理导致；
+dec 低是 pipeline 背压，还是队列丢帧；
+dec_ms 高才说明真实 cell decode 算不过来。
 ```
