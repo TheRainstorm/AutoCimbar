@@ -10,7 +10,59 @@ import (
 	"strings"
 )
 
-const DefaultConfigPath = ".autocimbar"
+const DefaultConfigPath = ".autocambar.ini"
+
+// LoadINIProfiles reads [profile.NAME] sections from the user config.
+func LoadINIProfiles() (map[string]map[string]string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("find user home: %w", err)
+	}
+	path := filepath.Join(home, DefaultConfigPath)
+	f, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return map[string]map[string]string{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("open config %s: %w", path, err)
+	}
+	defer f.Close()
+	profiles := map[string]map[string]string{}
+	section := ""
+	scanner := bufio.NewScanner(f)
+	lineNo := 0
+	for scanner.Scan() {
+		lineNo++
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
+			continue
+		}
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			section = strings.TrimSpace(line[1 : len(line)-1])
+			if strings.HasPrefix(strings.ToLower(section), "profile.") {
+				name := strings.TrimSpace(section[len("profile."):])
+				if name != "" {
+					profiles[strings.ToLower(name)] = map[string]string{}
+				}
+			}
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			return nil, fmt.Errorf("%s:%d: expected key=value", path, lineNo)
+		}
+		if strings.HasPrefix(strings.ToLower(section), "profile.") {
+			name := strings.ToLower(strings.TrimSpace(section[len("profile."):]))
+			if _, ok := profiles[name]; ok {
+				profiles[name][normalizeConfigKey(key)] = stripInlineComment(strings.TrimSpace(value))
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("read config %s: %w", path, err)
+	}
+	return profiles, nil
+}
 
 func ApplyINIConfig(fs *flag.FlagSet, command string, aliases map[string][]string) error {
 	values, err := LoadINIConfig(command)

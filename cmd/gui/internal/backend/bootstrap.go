@@ -45,10 +45,10 @@ func RunGUI(lite bool, assets fs.FS, icon []byte) {
 	mainWindow := wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:      "main",
 		Title:     title,
-		Width:     1080,
-		Height:    720,
-		MinWidth:  900,
-		MinHeight: 620,
+		Width:     780,
+		Height:    570,
+		MinWidth:  420,
+		MinHeight: 420,
 		URL:       "/",
 	})
 	appSvc.Attach(wailsApp, mainWindow)

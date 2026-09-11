@@ -8,6 +8,7 @@ import {
   defaultConfig,
   onEvent,
   type ReceiverMetrics,
+  type ConfigProfile,
   type ReceiverSession,
   type ScreenInfo,
   type SelectedFile,
@@ -24,6 +25,12 @@ const sender = ref<SenderSession | null>(null)
 const receiver = ref<ReceiverSession | null>(null)
 const senderState = ref<TaskState>('idle')
 const receiverState = ref<TaskState>('idle')
+const receiverAutoScale = ref(false)
+const activeTab = ref<'sender' | 'receiver'>('sender')
+const profiles = ref<ConfigProfile[]>([])
+const selectedProfile = ref('lite')
+const senderMD5 = ref('')
+const receiverMD5 = ref('')
 const advancedOpen = ref(false)
 const selectedPlacement = computed({
   get: () => placementFromPosition(config.position),
@@ -117,9 +124,24 @@ function positionFromPlacement(placement: string): string {
 
 async function loadInitial() {
   Object.assign(config, await ConfigService.getConfig())
+  receiverAutoScale.value = config.autoScale
+  profiles.value = await ConfigService.getProfiles()
+  selectedProfile.value = 'lite'
+  applyProfile()
   applyLiteConfig()
   screens.value = await AppService.listScreens()
 }
+
+function applyProfile() {
+  const profile = profiles.value.find((item) => item.name === selectedProfile.value)
+  if (!profile) return
+  const keep = { screen: config.screen, position: config.position, output: config.output, captureBackend: config.captureBackend, autoScale: receiverAutoScale.value }
+  Object.assign(config, profile.config, keep)
+  receiverAutoScale.value = keep.autoScale
+  applyLiteConfig()
+}
+
+const selectedProfileInfo = computed(() => profiles.value.find((profile) => profile.name === selectedProfile.value))
 
 function applyLiteConfig() {
   if (!isLite) return
@@ -188,7 +210,7 @@ async function startReceiver() {
   applyLiteConfig()
   await ConfigService.saveConfig({ ...config })
   if (!receiver.value || receiverState.value === 'done' || receiverState.value === 'stopped') {
-    receiver.value = await DecoderService.prepareReceive({ ...config })
+    receiver.value = await DecoderService.prepareReceive({ ...config, autoScale: receiverAutoScale.value })
   }
   const wasPaused = receiverState.value === 'paused'
   receiverState.value = 'running'
@@ -226,7 +248,7 @@ onMounted(() => {
   onEvent<{ message: string }>('sender:log', (payload) => pushLog(senderLogs, payload.message))
   onEvent<{ error: string }>('sender:error', (payload) => pushLog(senderLogs, `ERROR: ${payload.error}`))
   onEvent<{ fileName: string; md5: string }>('sender:done', (payload) =>
-    pushLog(senderLogs, `DONE: ${payload.fileName} md5=${payload.md5}`),
+    (senderMD5.value = payload.md5, pushLog(senderLogs, `DONE: ${payload.fileName} md5=${payload.md5}`)),
   )
   onEvent<ReceiverSession>('receiver:state', (payload) => {
     receiverState.value = payload.state
@@ -236,14 +258,14 @@ onMounted(() => {
   onEvent<ReceiverMetrics>('receiver:metrics', (payload) => Object.assign(metrics, payload))
   onEvent<{ error: string }>('receiver:error', (payload) => pushLog(receiverLogs, `ERROR: ${payload.error}`))
   onEvent<{ output: string; md5: string }>('receiver:done', (payload) =>
-    pushLog(receiverLogs, `DONE: ${payload.output} md5=${payload.md5}`),
+    (receiverMD5.value = payload.md5, pushLog(receiverLogs, `DONE: ${payload.output} md5=${payload.md5}`)),
   )
 })
 </script>
 
 <template>
   <main class="h-screen overflow-auto bg-gray-950 text-gray-100">
-    <div class="flex min-h-full w-full min-w-0 flex-col gap-3 px-4 py-3">
+    <div class="flex min-h-full w-full min-w-0 flex-col gap-2 px-3 py-2">
       <header class="flex items-center justify-between">
         <div>
           <h1 class="text-lg font-semibold text-white">{{ isLite ? 'AutoCimBar Lite' : 'AutoCimBar' }}</h1>
@@ -255,31 +277,29 @@ onMounted(() => {
       </header>
 
       <section class="min-w-0 rounded-xl border border-white/10 bg-gray-900/80 p-3 shadow-lg backdrop-blur-xl">
-        <div class="grid min-w-0 gap-3" :class="isLite ? 'md:grid-cols-[100px_1fr_90px_170px]' : 'md:grid-cols-[100px_1fr_170px_auto]'">
-          <label class="block" :title="tips.rq">
+        <div class="grid min-w-0 gap-2" :class="isLite ? 'grid-cols-[72px_minmax(0,1fr)_64px_120px]' : 'grid-cols-[72px_50%_minmax(0,1fr)_84px]'">
+          <label class="block min-w-0" :title="tips.rq">
             <span class="text-xs text-gray-400">RQ</span>
             <input v-model.number="config.rq" type="number" min="1" :max="isLite ? 40 : undefined" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" @change="applyLiteConfig" />
           </label>
-          <label class="block" :title="tips.screen">
+          <label class="block min-w-0" :title="tips.screen">
             <span class="text-xs text-gray-400">Screen</span>
             <select v-model.number="config.screen" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400">
               <option v-for="screen in screens" :key="screen.index" :value="screen.index">{{ screen.label }}</option>
             </select>
           </label>
-          <div v-if="!isLite">
-            <label class="block" :title="tips.captureBackend">
-              <span class="text-xs text-gray-400">Capture</span>
-              <select v-model="config.captureBackend" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400">
-                <option value="auto">auto</option>
-                <option value="dxgi">dxgi</option>
-                <option value="gdi">gdi</option>
+          <label v-if="!isLite" class="block min-w-0" title="Select a preset or a custom profile from ~/.autocambar.ini.">
+            <span class="text-xs text-gray-400">Profile</span>
+            <div class="relative mt-1 h-9">
+              <div class="pointer-events-none flex h-full w-full items-center justify-between overflow-hidden rounded-lg border border-white/10 bg-gray-800 px-3 text-left text-sm text-gray-100">
+                <span class="truncate">{{ selectedProfileInfo?.name || selectedProfile }}</span>
+                <span class="ml-2 shrink-0 text-xs text-gray-400">▼</span>
+              </div>
+              <select v-model="selectedProfile" class="absolute inset-0 h-full w-full cursor-pointer opacity-0" @change="applyProfile">
+                <option v-for="profile in profiles" :key="profile.name" :value="profile.name">{{ profile.name }} · {{ profile.description || 'custom profile' }}</option>
               </select>
-            </label>
-            <label class="mt-2 flex items-center gap-2 text-xs text-gray-300" :title="tips.autoScale">
-              <input v-model="config.autoScale" type="checkbox" class="accent-sky-400" />
-              Auto scale (receiver)
-            </label>
-          </div>
+            </div>
+          </label>
           <label v-if="isLite" class="block" :title="tips.scale">
             <span class="text-xs text-gray-400">B</span>
             <input v-model.number="config.scale" type="number" min="1" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" @change="applyLiteConfig" />
@@ -294,7 +314,7 @@ onMounted(() => {
               <option value="center">Center</option>
             </select>
           </label>
-          <button v-if="!isLite" class="self-end rounded-lg border border-white/10 bg-gray-800 px-4 py-2 text-sm text-gray-100 shadow-lg transition-all hover:scale-105 hover:bg-gray-700" @click="advancedOpen = !advancedOpen">
+          <button v-if="!isLite" class="self-end rounded-lg border border-white/10 bg-gray-800 px-3 py-2 text-sm text-gray-100 shadow-lg transition-all hover:scale-105 hover:bg-gray-700" @click="advancedOpen = !advancedOpen">
             Advanced
           </button>
         </div>
@@ -303,7 +323,7 @@ onMounted(() => {
           <div class="min-h-0">
             <div class="mt-3 rounded-xl border border-cyan-300/20 bg-cyan-500/10 p-3 shadow-lg">
               <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-cyan-100">Frame format - both sides must match</div>
-              <div class="grid gap-3 md:grid-cols-5">
+              <div class="grid min-w-[480px] gap-3 grid-cols-[minmax(100px,1.5fr)_minmax(90px,1.5fr)_64px_84px_106px]">
                 <label class="block" :title="tips.backend">
                   <span class="text-xs text-cyan-100">Backend</span>
                   <select v-model="config.backend" class="mt-1 h-9 w-full rounded-lg border border-cyan-200/20 bg-gray-950/70 px-3 text-sm text-gray-100 outline-none focus:border-cyan-300">
@@ -330,7 +350,7 @@ onMounted(() => {
               </div>
             </div>
 
-            <div class="mt-3 grid gap-3 md:grid-cols-3">
+            <div class="mt-3 grid gap-3 grid-cols-[100px_100px_140px]">
               <label class="block" :title="tips.scale">
                 <span class="text-xs text-gray-400">B</span>
                 <input v-model.number="config.scale" type="number" min="1" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" />
@@ -350,24 +370,43 @@ onMounted(() => {
                 </select>
               </label>
             </div>
+            <div v-if="!isLite" class="mt-3 flex items-center gap-4 border-t border-white/10 pt-3">
+              <label class="flex items-center gap-2 text-xs text-gray-300" :title="tips.captureBackend">
+                <span class="text-gray-400">Capture</span>
+                <select v-model="config.captureBackend" class="h-8 w-20 rounded-lg border border-white/10 bg-gray-800 px-2 text-xs text-gray-100 outline-none focus:border-sky-400">
+                  <option value="auto">auto</option>
+                  <option value="dxgi">dxgi</option>
+                  <option value="gdi">gdi</option>
+                </select>
+              </label>
+              <label class="flex items-center gap-2 text-xs text-gray-300" :title="tips.autoScale">
+                <input v-model="receiverAutoScale" type="checkbox" class="accent-sky-400" />
+                Auto scale (receiver)
+              </label>
+            </div>
           </div>
         </div>
       </section>
 
-      <section class="grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <div class="min-w-0 rounded-xl border border-white/10 bg-gray-900/75 p-4 shadow-glow backdrop-blur-xl">
-          <div class="mb-3 flex items-center justify-between">
+      <nav class="flex gap-1 rounded-lg border border-white/10 bg-gray-900/80 p-1 shadow-lg">
+        <button class="flex-1 rounded-md px-3 py-2 text-sm transition-colors" :class="activeTab === 'sender' ? 'bg-sky-500 text-white' : 'text-gray-400 hover:bg-gray-800'" @click="activeTab = 'sender'">Sender</button>
+        <button class="flex-1 rounded-md px-3 py-2 text-sm transition-colors" :class="activeTab === 'receiver' ? 'bg-emerald-500 text-white' : 'text-gray-400 hover:bg-gray-800'" @click="activeTab = 'receiver'">Receiver</button>
+      </nav>
+
+      <section class="min-w-0">
+        <div v-if="activeTab === 'sender'" class="w-full min-w-0 rounded-xl border border-white/10 bg-gray-900/75 p-3 shadow-glow backdrop-blur-xl">
+          <div class="mb-2 flex items-center justify-between">
             <div>
-              <h2 class="text-lg font-semibold text-white">Sender</h2>
+              <h2 class="text-base font-semibold text-white">Sender</h2>
               <p class="text-xs text-gray-400">Native high-fps render window</p>
             </div>
             <span class="rounded-lg bg-gray-800 px-2 py-1 text-xs uppercase text-sky-200">{{ senderState }}</span>
           </div>
 
-          <button class="group flex h-28 w-full flex-col items-center justify-center rounded-xl border border-dashed border-sky-300/30 bg-gray-800/70 p-4 text-center shadow-lg transition-all hover:scale-[1.01] hover:border-sky-300/70 hover:bg-gray-800" @click="chooseFile">
-            <div class="mb-2 grid h-10 w-10 place-items-center rounded-lg bg-sky-400/15 text-xl text-sky-200 transition-all group-hover:scale-105">↑</div>
-            <div class="text-base font-medium text-white">{{ selectedFile?.name || 'Choose file to send' }}</div>
-            <div class="mt-1 text-sm text-gray-400">{{ selectedFile ? `${(selectedFile.size / 1024 / 1024).toFixed(2)} MB` : 'Click to open system file picker' }}</div>
+          <button class="group flex h-20 w-full flex-col items-center justify-center rounded-lg border border-dashed border-sky-300/30 bg-gray-800/70 p-2 text-center shadow-lg transition-all hover:scale-[1.01] hover:border-sky-300/70 hover:bg-gray-800" @click="chooseFile">
+            <div class="mb-1 grid h-7 w-7 place-items-center rounded-md bg-sky-400/15 text-base text-sky-200 transition-all group-hover:scale-105">↑</div>
+            <div class="text-sm font-medium text-white">{{ selectedFile?.name || 'Choose file to send' }}</div>
+            <div class="mt-0.5 text-xs text-gray-400">{{ selectedFile ? `${(selectedFile.size / 1024 / 1024).toFixed(2)} MB` : 'Click to open system file picker' }}</div>
           </button>
 
           <div class="mt-3 grid grid-cols-3 gap-2">
@@ -378,21 +417,22 @@ onMounted(() => {
             <button :disabled="!canControlSender" class="rounded-lg bg-rose-500/90 px-3 py-2 text-sm font-medium text-white shadow-lg transition-all hover:scale-105 disabled:cursor-not-allowed disabled:bg-gray-700 disabled:text-gray-500" @click="stopSender">End</button>
           </div>
 
-          <div class="mt-3 h-28 min-w-0 max-w-full overflow-x-auto overflow-y-auto rounded-lg border border-white/10 bg-black/30 p-2 font-mono text-xs leading-5 text-gray-300">
+          <div class="mt-2 h-16 min-w-0 max-w-full overflow-x-auto overflow-y-auto rounded-lg border border-white/10 bg-black/30 p-2 font-mono text-xs leading-5 text-gray-300">
             <div v-for="(line, idx) in senderLogs" :key="idx" class="w-max min-w-full whitespace-nowrap">{{ line }}</div>
           </div>
+          <div v-if="senderMD5" class="mt-2 truncate rounded-lg bg-sky-500/10 px-3 py-2 font-mono text-xs text-sky-200" :title="senderMD5">MD5 {{ senderMD5 }}</div>
         </div>
 
-        <div class="min-w-0 rounded-xl border border-white/10 bg-gray-900/75 p-4 shadow-glow backdrop-blur-xl">
-          <div class="mb-3 flex items-center justify-between">
+        <div v-else class="w-full min-w-0 rounded-xl border border-white/10 bg-gray-900/75 p-3 shadow-glow backdrop-blur-xl">
+          <div class="mb-2 flex items-center justify-between">
             <div>
-              <h2 class="text-lg font-semibold text-white">Receiver</h2>
+              <h2 class="text-base font-semibold text-white">Receiver</h2>
               <p class="text-xs text-gray-400">Directory output uses sender file name</p>
             </div>
             <span class="rounded-lg bg-gray-800 px-2 py-1 text-xs uppercase text-emerald-200">{{ receiverState }}</span>
           </div>
 
-          <div class="grid gap-3 md:grid-cols-[120px_1fr]">
+          <div class="grid grid-cols-[128px_minmax(0,1fr)] gap-3">
             <div class="grid place-items-center">
               <div class="grid h-28 w-28 place-items-center rounded-full shadow-lg" :style="ringStyle">
                 <div class="grid h-20 w-20 place-items-center rounded-full bg-gray-950">
@@ -404,32 +444,33 @@ onMounted(() => {
               </div>
             </div>
             <div class="grid grid-cols-2 gap-2">
-              <div class="rounded-lg bg-gray-800/80 p-3 shadow-lg">
+              <div class="rounded-lg bg-gray-800/80 p-2 shadow-lg">
                 <div class="text-xs text-gray-400">Speed</div>
-                <div class="mt-1 text-xl font-semibold text-white">{{ metrics.speedKBps.toFixed(0) }}</div>
+                <div class="mt-1 text-lg font-semibold text-white">{{ metrics.speedKBps.toFixed(0) }}</div>
                 <div class="text-xs text-gray-500">KB/s</div>
               </div>
-              <div class="rounded-lg bg-gray-800/80 p-3 shadow-lg">
+              <div class="rounded-lg bg-gray-800/80 p-2 shadow-lg">
                 <div class="text-xs text-gray-400">FPS</div>
-                <div class="mt-1 text-xl font-semibold text-white">{{ metrics.fps.toFixed(0) }}</div>
+                <div class="mt-1 text-lg font-semibold text-white">{{ metrics.fps.toFixed(0) }}</div>
                 <div class="text-xs text-gray-500">capture/decode</div>
               </div>
-              <div class="rounded-lg bg-gray-800/80 p-3 shadow-lg">
+              <div class="rounded-lg bg-gray-800/80 p-2 shadow-lg">
                 <div class="text-xs text-gray-400">ETA</div>
-                <div class="mt-1 text-xl font-semibold text-white">{{ etaText }}</div>
+                <div class="mt-1 text-lg font-semibold text-white">{{ etaText }}</div>
                 <div class="text-xs text-gray-500">remaining</div>
               </div>
-              <div class="rounded-lg bg-gray-800/80 p-3 shadow-lg">
+              <div class="rounded-lg bg-gray-800/80 p-2 shadow-lg">
                 <div class="text-xs text-gray-400">Rank</div>
-                <div class="mt-1 text-xl font-semibold text-white">{{ metrics.rank }}/{{ metrics.blocks || '--' }}</div>
+                <div class="mt-1 text-lg font-semibold text-white">{{ metrics.rank }}/{{ metrics.blocks || '--' }}</div>
                 <div class="text-xs text-gray-500">fountain</div>
               </div>
             </div>
           </div>
 
-          <div class="mt-3 flex gap-2">
-            <input v-model="config.output" class="min-w-0 flex-1 rounded-lg border border-white/10 bg-gray-800 px-3 py-2 text-sm text-gray-100 outline-none transition-all focus:border-sky-400" placeholder="Output directory or file path" :title="tips.output" />
-            <button class="rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-100 shadow-lg transition-all hover:scale-105 hover:bg-gray-700" :title="tips.output" @click="chooseOutput">Browse</button>
+          <div class="mt-3 flex min-w-0 items-center gap-2 overflow-x-auto">
+            <span class="shrink-0 text-xs text-gray-400">Output</span>
+            <input v-model="config.output" class="h-9 w-40 shrink-0 rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none transition-all focus:border-sky-400" placeholder="Directory or file" :title="tips.output" />
+            <button class="shrink-0 rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-100 shadow-lg transition-all hover:scale-105 hover:bg-gray-700" :title="tips.output" @click="chooseOutput">Browse</button>
           </div>
 
           <div class="mt-3 grid grid-cols-3 gap-2">
@@ -440,9 +481,10 @@ onMounted(() => {
             <button :disabled="!canControlReceiver" class="rounded-lg bg-rose-500/90 px-3 py-2 text-sm font-medium text-white shadow-lg transition-all hover:scale-105 disabled:cursor-not-allowed disabled:bg-gray-700 disabled:text-gray-500" @click="stopReceiver">End</button>
           </div>
 
-          <div class="mt-3 h-24 min-w-0 max-w-full overflow-x-auto overflow-y-auto rounded-lg border border-white/10 bg-black/30 p-2 font-mono text-xs leading-5 text-gray-300">
+          <div class="mt-2 h-16 min-w-0 max-w-full overflow-x-auto overflow-y-auto rounded-lg border border-white/10 bg-black/30 p-2 font-mono text-xs leading-5 text-gray-300">
             <div v-for="(line, idx) in receiverLogs" :key="idx" class="w-max min-w-full whitespace-nowrap">{{ line }}</div>
           </div>
+          <div v-if="receiverMD5" class="mt-2 truncate rounded-lg bg-emerald-500/10 px-3 py-2 font-mono text-xs text-emerald-200" :title="receiverMD5">MD5 {{ receiverMD5 }}</div>
         </div>
       </section>
     </div>

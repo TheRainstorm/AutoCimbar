@@ -34,6 +34,12 @@ type TransferConfig struct {
 	AutoScale      bool   `json:"autoScale"`
 }
 
+type ConfigProfile struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Config      TransferConfig `json:"config"`
+}
+
 const (
 	LiteMaxRQ     = 40
 	LiteDefaultRQ = 26

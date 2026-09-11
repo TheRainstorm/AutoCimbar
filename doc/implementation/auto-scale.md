@@ -22,7 +22,7 @@
 - 搜索下限为 `grid * max(tileWidth, tileHeight)` 像素，上限为屏幕短边。小于一个屏幕像素的逻辑 tile 像素已经丢失信息，不保证可还原；先提高发送端 B。
 - 插值和视频压缩仍可能破坏颜色，建议先用默认 2bit color。此功能不修复 HDR 色彩变换。
 
-GUI 完整版开关只影响接收任务。GUI Lite 保持原有固定设置。`~/.autocimbar` 的 `[decoder]` 或 `[gui]` 支持 `auto-scale = true`，CLI 可用 `-auto-scale=false` 覆盖配置。
+GUI 完整版开关只影响接收任务。GUI Lite 保持原有固定设置。`~/.autocambar.ini` 的 `[decoder]` 或 `[gui]` 支持 `auto-scale = true`，CLI 可用 `-auto-scale=false` 覆盖配置。
 
 ## 实现流程
 

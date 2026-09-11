@@ -63,7 +63,7 @@ Add a Wails v3 desktop GUI for AutoCimBar while preserving the existing high-per
   - Niche CLI-only parameters such as external symbols and decode workers are no longer shown in the GUI.
   - Each visible setting has a hover tooltip aligned with the command-line help.
   - Lite build hides receiver and advanced frame-format controls, exposing only `RQ`, screen, placement, and `B`.
-  - GUI defaults are loaded from `~/.autocimbar` using `[default]` plus `[gui]`; old `Q` values are accepted as `RQ` when `RQ` is absent.
+  - GUI defaults are loaded from `~/.autocambar.ini` using `[default]` plus `[gui]`; old `Q` values are accepted as `RQ` when `RQ` is absent. Built-in `tiny`, `lite`, and `ultra` profiles can be selected from the native profile dropdown; custom `[profile.NAME]` sections are listed with their descriptions.
 - `src/runtime/api.ts`
   - Typed wrapper for Wails services and events.
   - Loads `/wails/runtime.js` at runtime, calls `window.wails.Call.ByName`, and subscribes with `window.wails.Events.On`.

@@ -38,7 +38,7 @@ Moonlight behaves differently from locally rendered RDP frames because it transp
 - Native borderless topmost encoder window on Windows, no browser required
 - Common tile symbol sets embedded in the executable, so a single exe can run directly
 - `-backend qr` for comparing the standard QR code backend with the symbols backend
-- Reads INI configuration from `~/.autocimbar`; explicit command-line options override it
+- Reads INI configuration from `~/.autocambar.ini`; explicit command-line options override it
 
 ## Build
 
@@ -94,7 +94,7 @@ Windows GUI:
 ./bin/guilite.exe
 ```
 
-The GUI provides independent Sender and Receiver panels that can run at the same time. The QR/symbol display still uses the native high-performance Windows topmost window. The main UI exposes `RQ`, screen selection, and capture backend; the Advanced panel highlights the frame-format settings that must match on both sides. The GUI reads `[default]` and `[gui]` from `~/.autocimbar`; when `RQ` is absent, old `Q` values are treated as the reference Q. Clicking the window `X` exits the app; clicking `To Tray` hides the dashboard in the system tray, whose menu can show or quit the app.
+The GUI provides Sender and Receiver tabs that can run at the same time. The QR/symbol display still uses the native high-performance Windows topmost window. The GUI reads `[default]` and `[gui]` from `~/.autocambar.ini`. Built-in profiles are `tiny` (about 7 KB/s, low bandwidth), `lite` (about 30 KB/s, default), and `ultra` (high throughput); custom profiles can be defined with `[profile.NAME]`. Clicking the window `X` exits the app; clicking `To Tray` hides the dashboard in the system tray, whose menu can show or quit the app.
 
 `guilite.exe` is a simplified GUI that still includes Sender and Receiver. It only exposes `RQ`, screen, placement, and `B`. Other parameters are fixed to `capture=gdi`, `cell=8t4s2c`, `ecc=3`, `packets=1`, zstd enabled, and `fps=30`. `RQ` is capped at 40 and defaults to 26.
 
@@ -190,7 +190,7 @@ When using an external symbol directory, both sides must use the same `-symbols`
 
 ## Configuration File
 
-On startup, the programs read `~/.autocimbar`. The file uses INI syntax and supports no section, `[default]`, `[encoder]`, and `[decoder]`. Explicit command-line options override config values.
+On startup, the programs read `~/.autocambar.ini`. The file uses INI syntax and supports no section, `[default]`, `[encoder]`, and `[decoder]`. GUI profiles use `[profile.NAME]`. Explicit command-line options override config values.
 
 Example:
 
@@ -208,6 +208,13 @@ r = 0
 [decoder]
 r = 1
 capture-backend = auto
+
+[profile.work]
+profile-description = stable office link
+RQ = 80
+cell = 8t4s2c
+ecc = 5
+packets = 1
 ```
 
 Config keys use command-line option names such as `RQ`, `cell`, `packets`, and `capture-backend`; underscores are treated as dashes.

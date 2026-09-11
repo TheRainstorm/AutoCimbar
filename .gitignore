@@ -4,3 +4,4 @@ libcimbar/
 tmp/
 third-party/
 cmd/gui/frontend/node_modules/
+todo.md

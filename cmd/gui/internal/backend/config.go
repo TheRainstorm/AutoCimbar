@@ -44,6 +44,36 @@ func (s *ConfigService) ResetConfig() TransferConfig {
 	return s.current
 }
 
+func (s *ConfigService) GetProfiles() []ConfigProfile {
+	profiles := []ConfigProfile{
+		{Name: "tiny", Description: "7 KB/s · low bandwidth", Config: profileConfig("tiny")},
+		{Name: "lite", Description: "30 KB/s · balanced default", Config: profileConfig("lite")},
+		{Name: "ultra", Description: "ultra speed · high throughput", Config: profileConfig("ultra")},
+	}
+	values, err := coreapp.LoadINIProfiles()
+	if err == nil {
+		for name, raw := range values {
+			cfg := profileConfig(name)
+			applyConfigValues(&cfg, raw)
+			profiles = append(profiles, ConfigProfile{Name: name, Description: raw["profile-description"], Config: normalizeConfigForDefaults(cfg)})
+		}
+	}
+	return profiles
+}
+
+func profileConfig(name string) TransferConfig {
+	cfg := DefaultTransferConfig()
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "tiny":
+		cfg.RQ, cfg.Cell, cfg.Packets = 7, "4t4s8c", 1
+	case "lite":
+		cfg.RQ, cfg.Cell, cfg.Packets = 40, "8t4s2c", 1
+	case "ultra":
+		cfg.RQ, cfg.Cell, cfg.Packets = 120, "4t4s8c", 3
+	}
+	return cfg
+}
+
 func (s *ConfigService) ValidateConfig(cfg TransferConfig) error {
 	cfg = normalizeConfig(cfg)
 	if s.lite {

@@ -19,6 +19,12 @@ export interface TransferConfig {
   autoScale: boolean
 }
 
+export interface ConfigProfile {
+  name: string
+  description: string
+  config: TransferConfig
+}
+
 export interface SelectedFile {
   path: string
   name: string
@@ -166,6 +172,11 @@ export const ConfigService = {
   getConfig: () => call<TransferConfig>('ConfigService', 'GetConfig', () => defaultConfig),
   saveConfig: (cfg: TransferConfig) => call<TransferConfig>('ConfigService', 'SaveConfig', () => cfg, cfg),
   validateConfig: (cfg: TransferConfig) => call<void>('ConfigService', 'ValidateConfig', () => undefined, cfg),
+  getProfiles: () => call<ConfigProfile[]>('ConfigService', 'GetProfiles', () => [
+    { name: 'tiny', description: '7 KB/s · low bandwidth', config: { ...defaultConfig, rq: 7, cell: '4t4s8c', ecc: 3, packets: 1 } },
+    { name: 'lite', description: '30 KB/s · balanced default', config: { ...defaultConfig, rq: 40, cell: '8t4s2c', ecc: 3, packets: 1 } },
+    { name: 'ultra', description: 'ultra speed · high throughput', config: { ...defaultConfig, rq: 120, cell: '4t4s8c', ecc: 3, packets: 3 } },
+  ]),
 }
 
 export const EncoderService = {

@@ -38,7 +38,7 @@ moonlight 由于传输的是视频流和 RDP 本地渲染画面有较大差别�
 - Windows encoder 使用原生无边框置顶窗口，不需要浏览器
 - 常用 tile 符号集已编译进程序，单 exe 分发即可运行
 - 新增 `-backend qr`，可用标准 QR code backend 和 symbols backend 做速度对比
-- 支持从 `~/.autocimbar` 读取 INI 配置，命令行参数会覆盖配置文件
+- 支持从 `~/.autocambar.ini` 读取 INI 配置，命令行参数会覆盖配置文件
 
 ## 编译
 
@@ -94,7 +94,7 @@ Windows GUI:
 ./bin/guilite.exe
 ```
 
-GUI 提供 Sender 和 Receiver 两个独立面板，可以同时发送和接收；二维码/符号显示仍沿用原生 Windows 高性能置顶窗口。主界面暴露 `RQ`、屏幕选择和截图后端；Advanced 面板把必须两端一致的“帧格式”参数用高亮分组展示。GUI 会读取 `~/.autocimbar` 的 `[default]` 和 `[gui]` 配置；未写 `RQ` 时会兼容旧的 `Q` 值。点击窗口 `X` 会退出程序；点击 `To Tray` 会最小化到系统托盘，托盘菜单可显示或退出程序。
+GUI 提供 Sender 和 Receiver 两个 tab，可以同时发送和接收；二维码/符号显示仍沿用原生 Windows 高性能置顶窗口。GUI 会读取 `~/.autocambar.ini` 的 `[default]` 和 `[gui]` 配置。内置 profile 为 `tiny`（约 7 KB/s，低带宽）、`lite`（约 30 KB/s，默认）和 `ultra`（高吞吐）；也可在 `[profile.NAME]` 中定义自定义 profile。点击窗口 `X` 会退出程序；点击 `To Tray` 会最小化到系统托盘，托盘菜单可显示或退出程序。
 
 `guilite.exe` 是简化版 GUI，仍包含 Sender 和 Receiver，只保留 `RQ`、屏幕、位置和 `B`。其它参数固定为 `capture=gdi`、`cell=8t4s2c`、`ecc=3`、`packets=1`、启用 zstd、`fps=30`，`RQ` 最大为 40，默认 26。
 
@@ -190,7 +190,7 @@ GUI 完整版在 Capture 下提供 **Auto scale (receiver)** 开关，发送端 
 
 ## 配置文件
 
-程序启动时会读取 `~/.autocimbar`。配置文件是 INI 格式，支持无 section、`[default]`、`[encoder]` 和 `[decoder]`。同名参数在命令行中显式指定时，会覆盖配置文件。
+程序启动时会读取 `~/.autocambar.ini`。配置文件是 INI 格式，支持无 section、`[default]`、`[encoder]` 和 `[decoder]`。GUI 还支持 `[profile.NAME]`；命令行显式参数会覆盖配置文件。
 
 示例：
 
@@ -208,6 +208,13 @@ r = 0
 [decoder]
 r = 1
 capture-backend = auto
+
+[profile.work]
+profile-description = stable office link
+RQ = 80
+cell = 8t4s2c
+ecc = 5
+packets = 1
 ```
 
 配置 key 使用命令行参数名即可，例如 `RQ`、`cell`、`packets`、`capture-backend`；下划线会按短横线处理。
