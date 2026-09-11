@@ -38,6 +38,8 @@ doc/
 
 ## 实现记录
 
+- [居中图案自动缩放识别](implementation/auto-scale.md)：远程桌面缩放的定位、CRC 锁定、重采样、支持范围与测试。
+
 - [Wails GUI 实现记录](implementation/gui-wails.md)
   - 记录 GUI/full GUI/Lite GUI 的后端结构、前端结构、托盘、配置读取和 release automation。
   - 适合继续维护 GUI 或发布流程时阅读。

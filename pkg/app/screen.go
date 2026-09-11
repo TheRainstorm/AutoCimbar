@@ -56,6 +56,7 @@ type ScreenDecodeConfig struct {
 	FPS              int
 	DecodeWorkers    int
 	CaptureBackend   string
+	AutoScale        bool
 	DebugCapturePath string
 	Timeout          time.Duration
 	Verbose          bool
@@ -238,6 +239,9 @@ func DecodeScreenToPath(cfg ScreenDecodeConfig) (*WriteSourceResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	if cfg.AutoScale && backend != BackendSymbols {
+		return nil, errors.New("auto-scale currently supports the symbols backend only")
+	}
 	colorBits := normalizeColorBits(cfg.ColorBits)
 	packetsPerFrame := normalizePacketsPerFrame(cfg.PacketsPerFrame)
 	shapeBits := cfg.ShapeBits
@@ -312,6 +316,14 @@ func DecodeScreenToPath(cfg ScreenDecodeConfig) (*WriteSourceResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	if cfg.AutoScale {
+		region := cfg.Region
+		if region == "" {
+			region = "0"
+		}
+		screenIndex, _, _, _ := parseRegionSpec(region, true)
+		rect = displayBounds(screenIndex)
+	}
 	capturer, err := newScreenCapturer(rect, cfg.CaptureBackend)
 	if err != nil {
 		return nil, err
@@ -339,7 +351,20 @@ func DecodeScreenToPath(cfg ScreenDecodeConfig) (*WriteSourceResult, error) {
 	captureDone := make(chan struct{})
 	cellName := CellSpecName(cfg.Tile, spec.ShapeBits, colorBits)
 	progress.setWorkerCount(len(decoders))
-	go runScreenCaptureLoop(capturer, interval, progress, frames, freeBuffers, captureErr, stopCapture, isPaused, cfg.DebugCapturePath, cellName, cfg.Verbose, captureDone)
+	var captureSource screenFrameCapturer = capturer
+	debugCaptureDir := cfg.DebugCapturePath
+	if cfg.AutoScale {
+		scaled, err := newAutoScaleCapturer(capturer, cfg, spec, imageSize, frameCapacity, blockSize, stopCapture)
+		if err != nil {
+			return nil, err
+		}
+		captureSource = scaled
+		debugCaptureDir = "" // Auto-scale saves the original full-display captures.
+		if cfg.Progress != nil {
+			fmt.Fprintln(cfg.Progress, "auto-scale: searching centered symbol frame on selected display (packet CRC required)")
+		}
+	}
+	go runScreenCaptureLoop(captureSource, interval, progress, frames, freeBuffers, captureErr, stopCapture, isPaused, debugCaptureDir, cellName, cfg.Verbose, captureDone)
 	decodeDone := make(chan struct{})
 	go runScreenDecodeWorkers(decoders, frames, decodedFrames, freeBuffers, progress, stopCapture, isPaused, cfg.Verbose, decodeDone)
 	defer func() {
@@ -522,7 +547,11 @@ func stopTimer(timer *time.Timer) {
 	}
 }
 
-func runScreenCaptureLoop(capturer *screenCapturer, interval time.Duration, progress *screenDecoderProgress, frames chan *capturedScreenFrame, freeBuffers chan []byte, captureErr chan<- error, stop <-chan struct{}, isPaused func() bool, debugCaptureDir string, debugCaptureCell string, verbose bool, done chan<- struct{}) {
+type screenFrameCapturer interface {
+	CaptureFrame([]byte) (*capturedScreenFrame, error)
+}
+
+func runScreenCaptureLoop(capturer screenFrameCapturer, interval time.Duration, progress *screenDecoderProgress, frames chan *capturedScreenFrame, freeBuffers chan []byte, captureErr chan<- error, stop <-chan struct{}, isPaused func() bool, debugCaptureDir string, debugCaptureCell string, verbose bool, done chan<- struct{}) {
 	defer close(done)
 	nextCapture := time.Now()
 	var buf []byte
@@ -574,6 +603,9 @@ func runScreenCaptureLoop(capturer *screenCapturer, interval time.Duration, prog
 			return
 		}
 		progress.noteCaptured()
+		if frame == nil {
+			continue // Auto-scale has not found a CRC-validated region yet.
+		}
 		fingerprint := capturedFrameFingerprint(frame)
 		if hasPreviousFrame && fingerprint == previousFingerprint && capturedFramePixelsEqual(previousFrame, frame) {
 			if verbose {

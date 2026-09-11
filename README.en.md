@@ -149,6 +149,23 @@ List displays:
 
 ## Cell And Tile
 
+### Remote Desktop Scaling
+
+For a 1080p cloud desktop displayed on a 4K monitor, or a scaled remote session, center the sender and enable receiver auto scaling:
+
+```bash
+./bin/encoder.exe -i input.bin -RQ 80 -r 0:c:c
+./bin/decoder.exe -RQ 80 -r 1 -auto-scale
+```
+
+Keep the same logical `Q/RQ`, cell, ECC, packets and symbol set on both sides. Do not multiply receiver RQ by the display scale. The decoder searches the entire selected display for a centered, uniformly scaled symbol frame and locks only after packet CRC validation. It searches again after repeated validation failures. Receiver `X:Y` is ignored in this mode.
+
+The full GUI provides **Auto scale (receiver)** under Capture; select Center for sender Placement. INI supports `auto-scale = true`. The option defaults to off and is not available in GUI Lite.
+
+Currently supported in symbols screen mode only. Use a full-screen remote session with the transfer frame centered on the local display. Arbitrary window positions, perspective and nonuniform scaling are unsupported. At least one screen pixel per logical tile pixel is required; severe downscaling and interpolation of high color-bit palettes can still lose information. Start with `8t4s2c` and increase sender `B` if needed. Full-display capture and resampling add overhead. See the [implementation and tests](doc/implementation/auto-scale.md) (Chinese).
+
+### Cell Specification
+
 Default `-c 8t4s2c` means:
 
 ```text

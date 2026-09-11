@@ -180,6 +180,7 @@ func (s *DecoderService) run(task *decoderTask, session ReceiverSession, stop <-
 		FPS:             cfg.FPS,
 		DecodeWorkers:   cfg.DecodeWorkers,
 		CaptureBackend:  cfg.CaptureBackend,
+		AutoScale:       cfg.AutoScale,
 		Progress:        log,
 		Stop:            stop,
 		Pause:           pause,

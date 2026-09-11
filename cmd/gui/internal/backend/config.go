@@ -215,6 +215,7 @@ func enforceLiteConfig(cfg TransferConfig) TransferConfig {
 	cfg.NoZstd = false
 	cfg.DecodeWorkers = 0
 	cfg.CaptureBackend = lite.CaptureBackend
+	cfg.AutoScale = false
 	return cfg
 }
 
@@ -327,6 +328,8 @@ func applyConfigValues(cfg *TransferConfig, values map[string]string) {
 			setInt(&cfg.DecodeWorkers, value)
 		case "capture-backend":
 			cfg.CaptureBackend = value
+		case "auto-scale":
+			setBool(&cfg.AutoScale, value)
 		}
 	}
 }

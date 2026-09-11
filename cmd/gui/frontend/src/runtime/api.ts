@@ -16,6 +16,7 @@ export interface TransferConfig {
   noZstd: boolean
   decodeWorkers: number
   captureBackend: string
+  autoScale: boolean
 }
 
 export interface SelectedFile {
@@ -140,6 +141,7 @@ export const defaultConfig: TransferConfig = {
   noZstd: false,
   decodeWorkers: 0,
   captureBackend: liteMode ? 'gdi' : 'auto',
+  autoScale: false,
 }
 
 export const AppService = {

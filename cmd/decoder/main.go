@@ -34,6 +34,7 @@ func main() {
 	fpsShort := fs.Int("f", 0, "short alias for -fps")
 	decodeWorkers := fs.Int("decode-workers", 0, "parallel screen decode workers, 0 chooses automatically")
 	captureBackend := fs.String("capture-backend", app.CaptureBackendAuto, "screen capture backend: auto, dxgi, or gdi")
+	autoScale := fs.Bool("auto-scale", false, "detect centered symbol frame size from the whole selected display; keep sender Q/RQ and frame format")
 	debugCapture := fs.String("debug-capture", "", "directory for first 60 captured frames; files are named <cell>_NNN.png")
 	verbose := fs.Bool("v", false, "print verbose decoder performance diagnostics")
 	listDisplays := fs.Bool("list-displays", false, "list detected display indexes and bounds")
@@ -76,6 +77,10 @@ func main() {
 		}
 		return
 	}
+	if *autoScale && (!*screen || *pngMode) {
+		fmt.Fprintln(os.Stderr, "auto-scale requires screen mode")
+		os.Exit(1)
+	}
 
 	if *screen && !*pngMode {
 		spec, err := app.ParseTileSpec(*tile, *shapeBits)
@@ -92,7 +97,7 @@ func main() {
 			Mode: "screen", Input: *input, Output: *output, Backend: *backend, Q: *q, RQ: *rq, ResolvedQ: gridSize, Scale: *b,
 			Tile: *tile, ShapeBits: *shapeBits, ColorBits: *colorBits, Cell: *cell, ECC: *eccPercent, Packets: *packetsPerFrame,
 			Region: *region, FPS: *fps, CaptureBackend: *captureBackend, DebugCapture: *debugCapture, DecodeWorkers: *decodeWorkers,
-			Verbose: *verbose,
+			Verbose: *verbose, AutoScale: *autoScale,
 		})
 		writeResult, err := app.DecodeScreenToPath(app.ScreenDecodeConfig{
 			OutputPath:       *output,
@@ -109,6 +114,7 @@ func main() {
 			FPS:              *fps,
 			DecodeWorkers:    *decodeWorkers,
 			CaptureBackend:   *captureBackend,
+			AutoScale:        *autoScale,
 			DebugCapturePath: *debugCapture,
 			Verbose:          *verbose,
 			Progress:         os.Stderr,
@@ -177,6 +183,7 @@ type runtimeConfig struct {
 	DebugCapture   string
 	DecodeWorkers  int
 	Verbose        bool
+	AutoScale      bool
 }
 
 func printRuntimeConfig(out *os.File, cfg runtimeConfig) {
@@ -190,6 +197,9 @@ func printRuntimeConfig(out *os.File, cfg runtimeConfig) {
 		cfg.Mode, cfg.Input, cfg.Output, cfg.RQ, cfg.Q, cfg.ResolvedQ, cfg.Scale, cfg.FPS, cfg.Region, cfg.CaptureBackend, cfg.DebugCapture, cfg.DecodeWorkers)
 	if cfg.Verbose {
 		fmt.Fprintln(out, "decoder verbose: enabled")
+	}
+	if cfg.AutoScale {
+		fmt.Fprintln(out, "decoder auto-scale: enabled (centered frame, full-display search)")
 	}
 }
 
@@ -224,6 +234,7 @@ func installUsage(fs *flag.FlagSet) {
 		printOption(fs, "-list-displays", "", "List display indexes and bounds.")
 		fmt.Fprintln(fs.Output())
 		fmt.Fprintln(fs.Output(), "Capture backend options:")
+		printOption(fs, "-auto-scale", "", "Detect centered symbol frame size on the whole selected display; ignores region X:Y. Keep sender Q/RQ, cell, ECC and packets. Defaults to off.")
 		printOption(fs, "-capture-backend", "auto|dxgi|gdi", "Screen capture backend. DXGI is fastest, but HDR/color-managed displays can break high color-bit modes; use SDR or GDI when colors do not decode.")
 		printOption(fs, "-debug-capture", "DIR", "Save the first 60 captured frames as DIR/<cell>_NNN.png; creates DIR when missing.")
 		printOption(fs, "-decode-workers", "N", "Parallel screen decode workers, 0 chooses automatically.")

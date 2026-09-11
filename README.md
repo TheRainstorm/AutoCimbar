@@ -149,6 +149,23 @@ decoder 截图后端参数：
 
 ## Cell 和 Tile
 
+### 远程桌面自动缩放
+
+当云桌面为 1080p、本地屏幕为 4K，或远程客户端缩放画面时，可以让发送图案居中，并在接收端启用自动缩放识别：
+
+```bash
+./bin/encoder.exe -i input.bin -RQ 80 -r 0:c:c
+./bin/decoder.exe -RQ 80 -r 1 -auto-scale
+```
+
+两端仍使用相同的逻辑 `Q/RQ`、cell、ECC、packets 和符号集；不需要手动把接收端 RQ 乘以缩放倍数。decoder 从 `-r` 选定的整块屏幕搜索居中的等比例符号图案，CRC 校验通过后锁定尺寸；连续校验失败时重新搜索。开启后忽略接收端 `X:Y`。
+
+GUI 完整版在 Capture 下提供 **Auto scale (receiver)** 开关，发送端 Placement 选择 Center；INI 中可写 `auto-scale = true`。默认关闭，GUI Lite 不提供此开关。
+
+此模式目前只支持 symbols 和屏幕模式。远程桌面应全屏显示，让传输图案位于本地屏幕中心；不支持任意窗口位置、透视或非等比例拉伸。缩小后每个逻辑 tile 像素至少需要一个屏幕像素，严重缩小或高颜色位经插值后仍可能丢失信息。建议先用默认 `8t4s2c`，必要时增大发送端 `B`。整屏截图与重采样有额外开销；[实现与测试说明](doc/implementation/auto-scale.md)记录了支持范围和诊断方式。
+
+### Cell 规格
+
 默认 `-c 8t4s2c` 等价于：
 
 ```text

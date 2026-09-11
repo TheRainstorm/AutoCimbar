@@ -67,6 +67,7 @@ const tips = {
   screen: 'Display index used by the sender window and receiver capture region.',
   captureBackend:
     'Receiver screen capture backend. DXGI is fastest, but HDR/color-managed displays can break high color-bit modes; use SDR or GDI when colors do not decode.',
+  autoScale: 'Receiver: detect centered symbol frame size on the whole selected display; ignores receiver Placement. Keep sender RQ, cell, ECC and packets. Sender must be centered. Defaults to off.',
   backend: 'Frame backend. symbols is the high-throughput AutoCimBar path; qr is for QR-code comparison.',
   cell: 'Frame format: compact cell spec with tile size, shape bits, and color bits. Sender and receiver must match.',
   ecc: 'Frame format: per-packet Reed-Solomon ECC percentage. Sender and receiver must match.',
@@ -131,6 +132,7 @@ function applyLiteConfig() {
   config.fps = 30
   config.backend = 'symbols'
   config.captureBackend = 'gdi'
+  config.autoScale = false
   config.noZstd = false
   config.symbols = ''
   config.decodeWorkers = 0
@@ -264,14 +266,20 @@ onMounted(() => {
               <option v-for="screen in screens" :key="screen.index" :value="screen.index">{{ screen.label }}</option>
             </select>
           </label>
-          <label v-if="!isLite" class="block" :title="tips.captureBackend">
-            <span class="text-xs text-gray-400">Capture</span>
-            <select v-model="config.captureBackend" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400">
-              <option value="auto">auto</option>
-              <option value="dxgi">dxgi</option>
-              <option value="gdi">gdi</option>
-            </select>
-          </label>
+          <div v-if="!isLite">
+            <label class="block" :title="tips.captureBackend">
+              <span class="text-xs text-gray-400">Capture</span>
+              <select v-model="config.captureBackend" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400">
+                <option value="auto">auto</option>
+                <option value="dxgi">dxgi</option>
+                <option value="gdi">gdi</option>
+              </select>
+            </label>
+            <label class="mt-2 flex items-center gap-2 text-xs text-gray-300" :title="tips.autoScale">
+              <input v-model="config.autoScale" type="checkbox" class="accent-sky-400" />
+              Auto scale (receiver)
+            </label>
+          </div>
           <label v-if="isLite" class="block" :title="tips.scale">
             <span class="text-xs text-gray-400">B</span>
             <input v-model.number="config.scale" type="number" min="1" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400" @change="applyLiteConfig" />

@@ -31,6 +31,7 @@ type TransferConfig struct {
 	NoZstd         bool   `json:"noZstd"`
 	DecodeWorkers  int    `json:"decodeWorkers"`
 	CaptureBackend string `json:"captureBackend"`
+	AutoScale      bool   `json:"autoScale"`
 }
 
 const (
