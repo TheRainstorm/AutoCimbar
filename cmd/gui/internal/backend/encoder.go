@@ -79,6 +79,7 @@ func (s *EncoderService) StartSend(id string) error {
 	}
 	task.stop = make(chan struct{})
 	task.running = true
+	task.session.MD5 = ""
 	task.session.State = StateRunning
 	session := task.session
 	stop := task.stop
@@ -105,6 +106,8 @@ func (s *EncoderService) GetSenderState(id string) (SenderSession, error) {
 	if err != nil {
 		return SenderSession{}, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return task.session, nil
 }
 
@@ -134,11 +137,27 @@ func (s *EncoderService) run(task *encoderTask, session SenderSession, stop <-ch
 		PacketsPerFrame: cfg.Packets,
 		NoZstd:          cfg.NoZstd,
 		Region:          regionFromConfig(cfg),
+		AutoScale:       cfg.AutoScale,
 		FPS:             cfg.FPS,
 		Progress:        log,
 		Stop:            stop,
+		OnChecksum: func(md5 string) {
+			s.mu.Lock()
+			if task.stop != stop || !task.running {
+				s.mu.Unlock()
+				return
+			}
+			task.session.MD5 = md5
+			s.mu.Unlock()
+			fmt.Fprintf(log, "source MD5 ready: %s\n", md5)
+			s.emit("sender:checksum", map[string]any{"sessionId": session.ID, "md5": md5})
+		},
 	})
 	s.mu.Lock()
+	if task.stop != stop {
+		s.mu.Unlock()
+		return
+	}
 	if task.session.State == StatePaused || task.session.State == StateStopped {
 		task.running = false
 		session := task.session
@@ -207,6 +226,16 @@ func (s *EncoderService) get(id string) (*encoderTask, error) {
 }
 
 func (s *EncoderService) emit(name string, payload any) {
+	if name == "sender:done" {
+		if fields, ok := payload.(map[string]any); ok {
+			transferLogs.append("sender", fmt.Sprint(fields["sessionId"]), fmt.Sprintf("DONE: %v", fields))
+		}
+	}
+	if name == "sender:error" {
+		if fields, ok := payload.(map[string]any); ok {
+			transferLogs.append("sender", fmt.Sprint(fields["sessionId"]), "ERROR: "+fmt.Sprint(fields["error"]))
+		}
+	}
 	if s.app != nil {
 		s.app.Event.Emit(name, payload)
 	}

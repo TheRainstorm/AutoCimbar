@@ -58,6 +58,10 @@ func (w *eventLogWriter) Write(p []byte) (int, error) {
 }
 
 func (w *eventLogWriter) emitLine(line string) {
+	transferLogs.append(strings.TrimSuffix(w.eventName, ":log"), w.sessionID, line)
+	if w.app == nil {
+		return
+	}
 	w.app.Event.Emit(w.eventName, map[string]any{
 		"sessionId": w.sessionID,
 		"message":   line,

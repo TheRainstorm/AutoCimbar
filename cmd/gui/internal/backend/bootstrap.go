@@ -46,7 +46,7 @@ func RunGUI(lite bool, assets fs.FS, icon []byte) {
 		Name:      "main",
 		Title:     title,
 		Width:     780,
-		Height:    570,
+		Height:    680,
 		MinWidth:  420,
 		MinHeight: 420,
 		URL:       "/",

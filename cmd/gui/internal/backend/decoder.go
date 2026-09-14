@@ -262,6 +262,16 @@ func (s *DecoderService) get(id string) (*decoderTask, error) {
 }
 
 func (s *DecoderService) emit(name string, payload any) {
+	if name == "receiver:done" {
+		if fields, ok := payload.(map[string]any); ok {
+			transferLogs.append("receiver", fmt.Sprint(fields["sessionId"]), fmt.Sprintf("DONE: %v", fields))
+		}
+	}
+	if name == "receiver:error" {
+		if fields, ok := payload.(map[string]any); ok {
+			transferLogs.append("receiver", fmt.Sprint(fields["sessionId"]), "ERROR: "+fmt.Sprint(fields["error"]))
+		}
+	}
 	if s.app != nil {
 		s.app.Event.Emit(name, payload)
 	}

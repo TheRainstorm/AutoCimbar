@@ -108,6 +108,7 @@ type ScreenInfo struct {
 }
 
 type SenderSession struct {
+	MD5      string         `json:"md5"`
 	ID       string         `json:"id"`
 	FilePath string         `json:"filePath"`
 	FileName string         `json:"fileName"`

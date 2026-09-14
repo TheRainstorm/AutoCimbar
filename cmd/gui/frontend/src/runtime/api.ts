@@ -41,6 +41,7 @@ export interface ScreenInfo {
 }
 
 export interface SenderSession {
+  md5?: string
   id: string
   filePath: string
   fileName: string
@@ -150,7 +151,12 @@ export const defaultConfig: TransferConfig = {
   autoScale: false,
 }
 
+export interface LogEntry { id: number; sessionId: string; message: string; at: string }
+export interface LogBatch { entries: LogEntry[]; latest: number }
+
 export const AppService = {
+  getLogs: (kind: string, after: number) => call<LogBatch>('AppService', 'GetLogs', () => ({entries: [], latest: 0}), kind, after),
+  openLogWindow: (kind: string) => call<void>('AppService', 'OpenLogWindow', () => { window.open(`/?logs=${kind}`, '_blank') }, kind),
   selectFileToSend: () =>
     call<SelectedFile>('AppService', 'SelectFileToSend', () => ({
       path: '',

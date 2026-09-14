@@ -5,16 +5,20 @@ package backend
 import (
 	"errors"
 	"fmt"
+	"github.com/wailsapp/wails/v3/pkg/events"
 	"os"
 	"path/filepath"
+	"sync"
 
 	coreapp "github.com/autocambar/autocambar/pkg/app"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 type AppService struct {
-	app    *application.App
-	window *application.WebviewWindow
+	app        *application.App
+	window     *application.WebviewWindow
+	logMu      sync.Mutex
+	logWindows map[string]*application.WebviewWindow
 }
 
 func NewAppService() *AppService {
@@ -166,4 +170,39 @@ func ConfigureSystemTray(app *application.App, window *application.WebviewWindow
 		app.Quit()
 	})
 	tray.SetMenu(menu)
+}
+
+func (s *AppService) GetLogs(kind string, after uint64) (LogBatch, error) {
+	if kind != "sender" && kind != "receiver" {
+		return LogBatch{}, errors.New("invalid log kind")
+	}
+	return transferLogs.snapshot(kind, after), nil
+}
+
+func (s *AppService) OpenLogWindow(kind string) error {
+	if kind != "sender" && kind != "receiver" {
+		return errors.New("invalid log kind")
+	}
+	if s.app == nil {
+		return errors.New("application is not ready")
+	}
+	s.logMu.Lock()
+	defer s.logMu.Unlock()
+	if s.logWindows == nil {
+		s.logWindows = make(map[string]*application.WebviewWindow)
+	}
+	window := s.logWindows[kind]
+	if window == nil {
+		window = s.app.Window.NewWithOptions(application.WebviewWindowOptions{
+			Name: kind + "-logs", Title: "AutoCimBar — " + kind + " logs",
+			Width: 1000, Height: 600, MinWidth: 480, MinHeight: 240, URL: "/?logs=" + kind,
+		})
+		window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
+			event.Cancel()
+			window.Hide()
+		})
+		s.logWindows[kind] = window
+	}
+	showMainWindow(window)
+	return nil
 }

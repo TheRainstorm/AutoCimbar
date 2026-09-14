@@ -30,6 +30,7 @@ func main() {
 	packetsShort := fs.Int("p", 0, "short alias for -packets")
 	noZstd := fs.Bool("no-zstd", false, "disable default zstd source compression")
 	screen := fs.Bool("screen", true, "show frames in a borderless screen window instead of writing PNG files")
+	autoScale := fs.Bool("auto-scale", false, "automatically center the symbol frame for receiver scale detection")
 	pngMode := fs.Bool("png", false, "write PNG frames instead of screen mode")
 	region := fs.String("R", "0", "screen window region SCREEN, X:Y or SCREEN:X:Y; c centers an axis")
 	regionShort := fs.String("r", "", "short alias for -R")
@@ -83,6 +84,18 @@ func main() {
 		os.Exit(2)
 	}
 
+	if *autoScale {
+		if !*screen || *pngMode {
+			fmt.Fprintln(os.Stderr, "auto-scale requires screen mode")
+			os.Exit(1)
+		}
+		*region, err = app.CenteredScreenRegion(*region)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	}
+
 	if *screen && !*pngMode {
 		spec, err := app.ParseTileSpec(*tile, *shapeBits)
 		if err != nil {
@@ -117,6 +130,7 @@ func main() {
 			PacketsPerFrame: *packetsPerFrame,
 			NoZstd:          *noZstd,
 			Region:          *region,
+			AutoScale:       *autoScale,
 			FPS:             *fps,
 			Addr:            *addr,
 			Open:            *open,
@@ -221,6 +235,7 @@ func installUsage(fs *flag.FlagSet, command string) {
 		printOption(fs, "-i", "FILE", "Input file.")
 		printOption(fs, "-RQ", "N", "Reference grid size using 8x8 tiles; actual Q scales when tile size changes.")
 		printOption(fs, "-Q", "N", "Raw grid/cell count. RQ takes precedence when set.")
+		printOption(fs, "-auto-scale", "", "Automatically center the sender; enable auto-scale on the receiver too.")
 		printOption(fs, "-B", "N", "Screen scale factor.")
 		printOption(fs, "-r, -R", "SCREEN[:X:Y]", "Screen placement. SCREEN, X:Y, or SCREEN:X:Y; X/Y accept -0 and c.")
 		printOption(fs, "-f, -fps", "N", "Screen refresh frame rate.")

@@ -55,7 +55,6 @@ func (s *DXGIScreenshot) Capture() (*image.RGBA, error) {
 	rect := GetDisplayBounds(s.display)
 	// 如果发现屏幕范围发生了变化就重新初始化
 	if rect != s.rect {
-		s.Release()
 		if err := s.Init(s.display); err != nil {
 			return nil, err
 		}
@@ -77,7 +76,6 @@ func (s *DXGIScreenshot) CaptureBGRA() (*image.RGBA, error) {
 	rect := GetDisplayBounds(s.display)
 	// 如果发现屏幕范围发生了变化就重新初始化
 	if rect != s.rect {
-		s.Release()
 		if err := s.Init(s.display); err != nil {
 			return nil, err
 		}
@@ -91,6 +89,9 @@ func (s *DXGIScreenshot) CaptureBGRA() (*image.RGBA, error) {
 
 	width := int(size.X)
 	height := int(size.Y)
+	if width <= 0 || height <= 0 || mappedRect.PBits == 0 || int(mappedRect.Pitch) < width*4 {
+		return nil, fmt.Errorf("invalid DXGI mapped frame: %dx%d pitch=%d", width, height, mappedRect.Pitch)
+	}
 	if s.bgra == nil || s.bgra.Bounds().Dx() != width || s.bgra.Bounds().Dy() != height {
 		s.bgra = image.NewRGBA(image.Rect(0, 0, width, height))
 	}
@@ -110,15 +111,21 @@ func (s *DXGIScreenshot) CaptureBGRA() (*image.RGBA, error) {
 }
 
 func (s *DXGIScreenshot) Release() {
-	if s.device != nil {
-		s.device.Release()
+	// Reinitialization and failed initialization can both release this object.
+	// Drop dependent resources first, and never retain freed COM pointers.
+	if s.ddup != nil {
+		s.ddup.Release()
+		s.ddup = nil
 	}
 	if s.deviceCtx != nil {
 		s.deviceCtx.Release()
+		s.deviceCtx = nil
 	}
-	if s.ddup != nil {
-		s.ddup.Release()
+	if s.device != nil {
+		s.device.Release()
+		s.device = nil
 	}
+	s.bgra = nil
 }
 
 func (s *DXGIScreenshot) GetDisplayId() int {

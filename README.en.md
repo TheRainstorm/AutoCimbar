@@ -154,13 +154,15 @@ List displays:
 For a 1080p cloud desktop displayed on a 4K monitor, or a scaled remote session, center the sender and enable receiver auto scaling:
 
 ```bash
-./bin/encoder.exe -i input.bin -RQ 80 -r 0:c:c
+./bin/encoder.exe -i input.bin -RQ 80 -r 0 -auto-scale
 ./bin/decoder.exe -RQ 80 -r 1 -auto-scale
 ```
 
 Keep the same logical `Q/RQ`, cell, ECC, packets and symbol set on both sides. Do not multiply receiver RQ by the display scale. The decoder searches the entire selected display for a centered, uniformly scaled symbol frame and locks only after packet CRC validation. It searches again after repeated validation failures. Receiver `X:Y` is ignored in this mode.
 
-The full GUI provides **Auto scale (receiver)** under Capture; select Center for sender Placement. INI supports `auto-scale = true`. The option defaults to off and is not available in GUI Lite.
+The full GUI provides **Auto scale (sender + receiver)** under Capture. Enable it on both ends: the sender centers automatically and the receiver detects the frame size from the selected display. No manual Placement or resolution-based RQ adjustment is needed. INI supports `auto-scale = true` in `[encoder]`, `[decoder]` or `[gui]`. The option defaults to off and is not available in GUI Lite.
+
+Auto scale preserves the configured sender and receiver FPS without automatically reducing or capping the sender frame rate. Logs distinguish degraded geometry from stable geometry with failing packet checks.
 
 Currently supported in symbols screen mode only. Use a full-screen remote session with the transfer frame centered on the local display. Arbitrary window positions, perspective and nonuniform scaling are unsupported. At least one screen pixel per logical tile pixel is required; severe downscaling and interpolation of high color-bit palettes can still lose information. Start with `8t4s2c` and increase sender `B` if needed. Full-display capture and resampling add overhead. See the [implementation and tests](doc/implementation/auto-scale.md) (Chinese).
 
@@ -268,3 +270,7 @@ Tests cover PNG end-to-end transfer, QR backend PNG round trip, ECC, packet CRC,
 ## License
 
 MIT
+
+### GUI checksums and logs
+
+After Start, the sending worker computes the source MD5 and publishes it as soon as source preparation finishes, without waiting for the transfer to end. Pop out opens an independent log window. Clear clears the current view; Pause logs freezes only the view while transfer and logging continue. Resume logs catches up within the latest 2000 retained records. Follow controls automatic scrolling.

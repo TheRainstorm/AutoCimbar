@@ -20,10 +20,15 @@ type autoScaleCapturer struct {
 	decoder                        frameDecoder
 	packetCodec                    *ecc.PacketCodec
 	grid, size, blockSize, packets int
+	desktop                        image.Point
 	region                         image.Rectangle
 	sampler                        *scaledFrameSampler
 	fullBuffer, payload, packet    []byte
 	nextSearch, nextCheck          time.Time
+	pendingRect                    image.Rectangle
+	pendingSampler                 *scaledFrameSampler
+	nextDiagnostic                 time.Time
+	nextProbe                      time.Time
 	failedChecks                   int
 	debugDir, debugCell            string
 	debugCount                     int
@@ -59,6 +64,17 @@ func (a *autoScaleCapturer) CaptureFrame(dst []byte) (*capturedScreenFrame, erro
 	if err != nil || full == nil {
 		return nil, err
 	}
+	if err := validateScaleFrame(full); err != nil {
+		return nil, err
+	}
+	desktop := image.Pt(full.Width, full.Height)
+	if desktop != a.desktop {
+		a.desktop = desktop
+		a.region = image.Rectangle{}
+		a.sampler = nil
+		a.pendingSampler = nil
+		a.nextSearch = time.Time{}
+	}
 	a.fullBuffer = full.Pix
 	if a.debugDir != "" && a.debugCount < 60 {
 		path := debugCaptureFramePath(a.debugDir, a.debugCell, a.debugCount)
@@ -84,21 +100,46 @@ func (a *autoScaleCapturer) CaptureFrame(dst []byte) (*capturedScreenFrame, erro
 					a.failedChecks++
 				}
 				if a.failedChecks >= 3 {
-					a.region = image.Rectangle{}
-					if a.log != nil {
-						fmt.Fprintln(a.log, "auto-scale: lost valid packets; searching again")
+					score := scaledTemplateScore(full, a.region, a.grid, a.symbols)
+					if score < 0.10 {
+						// Mixed frames can retain perfectly aligned symbols while failing
+						// packet CRC. Do not confuse transport damage with scale changes.
+						if a.log != nil && a.failedChecks%5 == 3 {
+							fmt.Fprintf(a.log, "auto-scale: geometry stable (score=%.3f), packet checks failing; possible remote compression/mixed frames, lower sender FPS\n", score)
+						}
+					} else {
+						a.region = image.Rectangle{}
+						a.pendingSampler = nil
+						if a.log != nil {
+							fmt.Fprintf(a.log, "auto-scale: geometry changed or degraded (score=%.3f); searching again\n", score)
+						}
+						return nil, nil
 					}
-					return nil, nil
 				}
 			}
 			return frame, nil
 		}
 	}
 	if now.Before(a.nextSearch) {
+		// Retry promising geometry on fresh captures, rather than waiting for
+		// the next full search to happen to coincide with an intact packet.
+		if a.pendingSampler != nil && !now.Before(a.nextProbe) {
+			a.nextProbe = now.Add(100 * time.Millisecond)
+			frame := a.pendingSampler.normalize(full, dst)
+			if a.valid(frame) {
+				a.lock(a.pendingRect, a.pendingSampler)
+				return frame, nil
+			}
+		}
 		return nil, nil
 	}
 	defer func() { a.nextSearch = time.Now().Add(time.Second) }()
 	candidates := centeredScaleCandidates(full, a.grid, a.symbols, a.stop)
+	a.pendingSampler = nil
+	if len(candidates) > 0 && candidates[0].score < 0.10 {
+		a.pendingRect = candidates[0].rect
+		a.pendingSampler = newScaledFrameSampler(full, a.pendingRect, a.size, a.grid, a.symbols.Spec())
+	}
 	for _, candidate := range candidates {
 		select {
 		case <-a.stop:
@@ -111,16 +152,38 @@ func (a *autoScaleCapturer) CaptureFrame(dst []byte) (*capturedScreenFrame, erro
 		if !a.valid(frame) {
 			continue
 		}
-		a.region = candidate.rect
-		a.sampler = sampler
-		a.failedChecks = 0
-		a.nextCheck = time.Now().Add(time.Second)
-		if a.log != nil {
-			fmt.Fprintf(a.log, "auto-scale: locked rect=%v (display-local) scale=%.4f size=%d -> %d pixels\n", a.region, float64(a.region.Dx())/float64(a.size), a.region.Dx(), a.size)
-		}
+		a.lock(candidate.rect, sampler)
 		return frame, nil
 	}
+	if a.log != nil && a.pendingSampler != nil && !now.Before(a.nextDiagnostic) {
+		a.nextDiagnostic = now.Add(5 * time.Second)
+		fmt.Fprintf(a.log, "auto-scale: symbol geometry candidate rect=%v score=%.3f, no valid packet yet; retrying fresh captures (check frame format or lower sender FPS)\n", a.pendingRect, candidates[0].score)
+	}
 	return nil, nil
+}
+
+func (a *autoScaleCapturer) lock(rect image.Rectangle, sampler *scaledFrameSampler) {
+	a.region, a.sampler = rect, sampler
+	a.pendingSampler = nil
+	a.failedChecks = 0
+	a.nextCheck = time.Now().Add(time.Second)
+	if a.log != nil {
+		fmt.Fprintf(a.log, "auto-scale: locked rect=%v (display-local) scale=%.4f size=%d -> %d pixels\n", rect, float64(rect.Dx())/float64(a.size), rect.Dx(), a.size)
+	}
+}
+
+// Validate capture layout before any template or bilinear sampling indexes it.
+func validateScaleFrame(frame *capturedScreenFrame) error {
+	pix, stride := frame.Pix, frame.Stride
+	if pix == nil && frame.Img != nil {
+		pix, stride = frame.Img.Pix, frame.Img.Stride
+	}
+	if frame.Width <= 0 || frame.Height <= 0 || stride <= 0 || frame.Width > stride/4 ||
+		frame.Height-1 > len(pix)/stride ||
+		frame.Width*4 > len(pix)-(frame.Height-1)*stride {
+		return fmt.Errorf("auto-scale: invalid capture layout %dx%d stride=%d bytes=%d", frame.Width, frame.Height, stride, len(pix))
+	}
+	return nil
 }
 
 func (a *autoScaleCapturer) valid(frame *capturedScreenFrame) bool {

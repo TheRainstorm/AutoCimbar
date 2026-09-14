@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import LogPanel from './LogPanel.vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   AppService,
   ConfigService,
@@ -25,7 +26,6 @@ const sender = ref<SenderSession | null>(null)
 const receiver = ref<ReceiverSession | null>(null)
 const senderState = ref<TaskState>('idle')
 const receiverState = ref<TaskState>('idle')
-const receiverAutoScale = ref(false)
 const activeTab = ref<'sender' | 'receiver'>('sender')
 const profiles = ref<ConfigProfile[]>([])
 const selectedProfile = ref('lite')
@@ -38,8 +38,10 @@ const selectedPlacement = computed({
     config.position = positionFromPlacement(value)
   },
 })
-const senderLogs = ref<string[]>([])
-const receiverLogs = ref<string[]>([])
+watch(() => config.autoScale, (enabled) => {
+  if (enabled) config.position = 'c:c'
+}, { flush: 'sync' })
+
 const metrics = reactive<ReceiverMetrics>({
   sessionId: '',
   state: 'idle',
@@ -74,20 +76,16 @@ const tips = {
   screen: 'Display index used by the sender window and receiver capture region.',
   captureBackend:
     'Receiver screen capture backend. DXGI is fastest, but HDR/color-managed displays can break high color-bit modes; use SDR or GDI when colors do not decode.',
-  autoScale: 'Receiver: detect centered symbol frame size on the whole selected display; ignores receiver Placement. Keep sender RQ, cell, ECC and packets. Sender must be centered. Defaults to off.',
+  autoScale: 'Enable on both ends: sender automatically centers the frame; receiver searches the whole selected display and detects scale. Keep the same RQ, cell, ECC and packets on both ends.',
   backend: 'Frame backend. symbols is the high-throughput AutoCimBar path; qr is for QR-code comparison.',
   cell: 'Frame format: compact cell spec with tile size, shape bits, and color bits. Sender and receiver must match.',
   ecc: 'Frame format: per-packet Reed-Solomon ECC percentage. Sender and receiver must match.',
   packets: 'Frame format: independent packets packed into each screen frame. Sender and receiver must match.',
   zstd: 'Frame format: zstd source compression is enabled by default. Sender controls it; receiver detects it from transfer metadata.',
   scale: 'Screen scale factor B. Increase when the display path needs larger pixels.',
-  fps: 'Target sender refresh or receiver capture frame rate.',
+  fps: 'Target sender refresh or receiver capture frame rate. Auto scale preserves your FPS setting.',
   placement: 'Window/capture placement on the selected screen. CLI still supports exact X:Y.',
   output: 'Output directory or file path. Directories use the sender file name.',
-}
-
-function pushLog(target: typeof senderLogs | typeof receiverLogs, message: string) {
-  target.value = [...target.value.slice(-80), message]
 }
 
 function placementFromPosition(position: string): string {
@@ -124,7 +122,6 @@ function positionFromPlacement(placement: string): string {
 
 async function loadInitial() {
   Object.assign(config, await ConfigService.getConfig())
-  receiverAutoScale.value = config.autoScale
   profiles.value = await ConfigService.getProfiles()
   selectedProfile.value = 'lite'
   applyProfile()
@@ -135,9 +132,9 @@ async function loadInitial() {
 function applyProfile() {
   const profile = profiles.value.find((item) => item.name === selectedProfile.value)
   if (!profile) return
-  const keep = { screen: config.screen, position: config.position, output: config.output, captureBackend: config.captureBackend, autoScale: receiverAutoScale.value }
+  const keep = { screen: config.screen, position: config.position, output: config.output, captureBackend: config.captureBackend, autoScale: config.autoScale }
   Object.assign(config, profile.config, keep)
-  receiverAutoScale.value = keep.autoScale
+  if (config.autoScale) config.position = 'c:c'
   applyLiteConfig()
 }
 
@@ -163,6 +160,7 @@ function applyLiteConfig() {
 async function chooseFile() {
   const file = await AppService.selectFileToSend()
   if (!file.path) return
+  senderMD5.value = ''
   selectedFile.value = file
   sender.value = await EncoderService.prepareSend(file.path, { ...config })
   senderState.value = sender.value.state
@@ -209,8 +207,8 @@ async function stopSender() {
 async function startReceiver() {
   applyLiteConfig()
   await ConfigService.saveConfig({ ...config })
-  if (!receiver.value || receiverState.value === 'done' || receiverState.value === 'stopped') {
-    receiver.value = await DecoderService.prepareReceive({ ...config, autoScale: receiverAutoScale.value })
+  if (!receiver.value || (receiverState.value !== 'paused' && receiverState.value !== 'running')) {
+    receiver.value = await DecoderService.prepareReceive({ ...config })
   }
   const wasPaused = receiverState.value === 'paused'
   receiverState.value = 'running'
@@ -242,24 +240,26 @@ async function stopReceiver() {
 onMounted(() => {
   void loadInitial()
   onEvent<SenderSession>('sender:state', (payload) => {
+    if (selectedFile.value && payload.filePath !== selectedFile.value.path) return
+    senderMD5.value = payload.md5 || ''
     senderState.value = payload.state
     sender.value = payload
   })
-  onEvent<{ message: string }>('sender:log', (payload) => pushLog(senderLogs, payload.message))
-  onEvent<{ error: string }>('sender:error', (payload) => pushLog(senderLogs, `ERROR: ${payload.error}`))
-  onEvent<{ fileName: string; md5: string }>('sender:done', (payload) =>
-    (senderMD5.value = payload.md5, pushLog(senderLogs, `DONE: ${payload.fileName} md5=${payload.md5}`)),
-  )
+  onEvent<{ sessionId: string; md5: string }>('sender:checksum', (payload) => {
+    if (payload.sessionId === sender.value?.id) senderMD5.value = payload.md5
+  })
+  onEvent<{ sessionId: string; fileName: string; md5: string }>('sender:done', (payload) => {
+    if (payload.sessionId !== sender.value?.id) return
+    senderMD5.value = payload.md5
+  })
   onEvent<ReceiverSession>('receiver:state', (payload) => {
     receiverState.value = payload.state
     receiver.value = payload
   })
-  onEvent<{ message: string }>('receiver:log', (payload) => pushLog(receiverLogs, payload.message))
   onEvent<ReceiverMetrics>('receiver:metrics', (payload) => Object.assign(metrics, payload))
-  onEvent<{ error: string }>('receiver:error', (payload) => pushLog(receiverLogs, `ERROR: ${payload.error}`))
-  onEvent<{ output: string; md5: string }>('receiver:done', (payload) =>
-    (receiverMD5.value = payload.md5, pushLog(receiverLogs, `DONE: ${payload.output} md5=${payload.md5}`)),
-  )
+  onEvent<{ sessionId: string; output: string; md5: string }>('receiver:done', (payload) => {
+    if (payload.sessionId === receiver.value?.id) receiverMD5.value = payload.md5
+  })
 })
 </script>
 
@@ -306,7 +306,7 @@ onMounted(() => {
           </label>
           <label v-if="isLite" class="block" :title="tips.placement">
             <span class="text-xs text-gray-400">Placement</span>
-            <select v-model="selectedPlacement" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400">
+            <select v-model="selectedPlacement" :disabled="config.autoScale" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400">
               <option value="bottom-right">Bottom right</option>
               <option value="bottom-left">Bottom left</option>
               <option value="top-right">Top right</option>
@@ -361,7 +361,7 @@ onMounted(() => {
               </label>
               <label class="block" :title="tips.placement">
                 <span class="text-xs text-gray-400">Placement</span>
-                <select v-model="selectedPlacement" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400">
+                <select v-model="selectedPlacement" :disabled="config.autoScale" class="mt-1 h-9 w-full rounded-lg border border-white/10 bg-gray-800 px-3 text-sm text-gray-100 outline-none focus:border-sky-400">
                   <option value="bottom-right">Bottom right</option>
                   <option value="bottom-left">Bottom left</option>
                   <option value="top-right">Top right</option>
@@ -380,8 +380,8 @@ onMounted(() => {
                 </select>
               </label>
               <label class="flex items-center gap-2 text-xs text-gray-300" :title="tips.autoScale">
-                <input v-model="receiverAutoScale" type="checkbox" class="accent-sky-400" />
-                Auto scale (receiver)
+                <input v-model="config.autoScale" type="checkbox" class="accent-sky-400" />
+                Auto scale (sender + receiver)
               </label>
             </div>
           </div>
@@ -417,9 +417,7 @@ onMounted(() => {
             <button :disabled="!canControlSender" class="rounded-lg bg-rose-500/90 px-3 py-2 text-sm font-medium text-white shadow-lg transition-all hover:scale-105 disabled:cursor-not-allowed disabled:bg-gray-700 disabled:text-gray-500" @click="stopSender">End</button>
           </div>
 
-          <div class="mt-2 h-16 min-w-0 max-w-full overflow-x-auto overflow-y-auto rounded-lg border border-white/10 bg-black/30 p-2 font-mono text-xs leading-5 text-gray-300">
-            <div v-for="(line, idx) in senderLogs" :key="idx" class="w-max min-w-full whitespace-nowrap">{{ line }}</div>
-          </div>
+          <LogPanel kind="sender" />
           <div v-if="senderMD5" class="mt-2 truncate rounded-lg bg-sky-500/10 px-3 py-2 font-mono text-xs text-sky-200" :title="senderMD5">MD5 {{ senderMD5 }}</div>
         </div>
 
@@ -481,9 +479,7 @@ onMounted(() => {
             <button :disabled="!canControlReceiver" class="rounded-lg bg-rose-500/90 px-3 py-2 text-sm font-medium text-white shadow-lg transition-all hover:scale-105 disabled:cursor-not-allowed disabled:bg-gray-700 disabled:text-gray-500" @click="stopReceiver">End</button>
           </div>
 
-          <div class="mt-2 h-16 min-w-0 max-w-full overflow-x-auto overflow-y-auto rounded-lg border border-white/10 bg-black/30 p-2 font-mono text-xs leading-5 text-gray-300">
-            <div v-for="(line, idx) in receiverLogs" :key="idx" class="w-max min-w-full whitespace-nowrap">{{ line }}</div>
-          </div>
+          <LogPanel kind="receiver" />
           <div v-if="receiverMD5" class="mt-2 truncate rounded-lg bg-emerald-500/10 px-3 py-2 font-mono text-xs text-emerald-200" :title="receiverMD5">MD5 {{ receiverMD5 }}</div>
         </div>
       </section>

@@ -8,6 +8,7 @@ import (
 	"io"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,11 +34,13 @@ type ScreenEncodeConfig struct {
 	Tile            string
 	PacketsPerFrame int
 	Region          string
+	AutoScale       bool
 	FPS             int
 	Addr            string
 	Open            bool
 	Progress        io.Writer
 	Stop            <-chan struct{}
+	OnChecksum      func(string) // Called from the sending goroutine once source preparation completes.
 }
 
 type ScreenDecodeConfig struct {
@@ -86,6 +89,15 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 	backend, err := normalizeBackend(cfg.Backend)
 	if err != nil {
 		return nil, err
+	}
+	if cfg.AutoScale {
+		if backend != BackendSymbols {
+			return nil, errors.New("auto-scale currently supports the symbols backend only")
+		}
+		cfg.Region, err = CenteredScreenRegion(cfg.Region)
+		if err != nil {
+			return nil, err
+		}
 	}
 	colorBits := normalizeColorBits(cfg.ColorBits)
 	packetsPerFrame := normalizePacketsPerFrame(cfg.PacketsPerFrame)
@@ -159,6 +171,9 @@ func EncodeFileToScreen(cfg ScreenEncodeConfig) (*EncodeResult, error) {
 	sourceData, fileSize, md5Hex, err := BuildSourceDataFromFileWithCompression(cfg.InputPath, compress)
 	if err != nil {
 		return nil, err
+	}
+	if cfg.OnChecksum != nil {
+		cfg.OnChecksum(md5Hex)
 	}
 	sourcePayloadSize, err := SourcePayloadSize(sourceData)
 	if err != nil {
@@ -312,17 +327,23 @@ func DecodeScreenToPath(cfg ScreenDecodeConfig) (*WriteSourceResult, error) {
 	blockCount := 0
 	fileSize := -1
 
-	rect, err := ResolveDecoderRegion(cfg.Region, imageSize, imageSize)
+	var rect image.Rectangle
+	if cfg.AutoScale {
+		region, regionErr := CenteredScreenRegion(cfg.Region)
+		if regionErr != nil {
+			return nil, regionErr
+		}
+		// Resolve only the display, independent of normalized frame size or X:Y.
+		rect, err = ResolveDecoderRegion(region, 1, 1)
+		if err == nil {
+			screenIndex, _, _, _ := parseRegionSpec(region, true)
+			rect = displayBounds(screenIndex)
+		}
+	} else {
+		rect, err = ResolveDecoderRegion(cfg.Region, imageSize, imageSize)
+	}
 	if err != nil {
 		return nil, err
-	}
-	if cfg.AutoScale {
-		region := cfg.Region
-		if region == "" {
-			region = "0"
-		}
-		screenIndex, _, _, _ := parseRegionSpec(region, true)
-		rect = displayBounds(screenIndex)
 	}
 	capturer, err := newScreenCapturer(rect, cfg.CaptureBackend)
 	if err != nil {
@@ -553,6 +574,14 @@ type screenFrameCapturer interface {
 
 func runScreenCaptureLoop(capturer screenFrameCapturer, interval time.Duration, progress *screenDecoderProgress, frames chan *capturedScreenFrame, freeBuffers chan []byte, captureErr chan<- error, stop <-chan struct{}, isPaused func() bool, debugCaptureDir string, debugCaptureCell string, verbose bool, done chan<- struct{}) {
 	defer close(done)
+	defer func() {
+		if cause := recover(); cause != nil {
+			select {
+			case captureErr <- fmt.Errorf("screen capture panic: %v\n%s", cause, debug.Stack()):
+			default:
+			}
+		}
+	}()
 	nextCapture := time.Now()
 	var buf []byte
 	var previousFrame []byte
@@ -960,6 +989,18 @@ func (s *screenFrameSource) nextPacketLocked() ([]byte, error) {
 
 func (s *screenFrameSource) notePresented() {
 	s.progress.notePresented()
+}
+
+// CenteredScreenRegion keeps the selected display and overrides pixel placement.
+func CenteredScreenRegion(region string) (string, error) {
+	if region == "" {
+		region = "0"
+	}
+	screen, _, _, err := parseRegionSpec(region, true)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%d:c:c", screen), nil
 }
 
 func ResolveEncoderRegion(region string, width int, height int) (image.Rectangle, error) {

@@ -112,6 +112,9 @@ func ValidateConfig(cfg TransferConfig) error {
 	if _, err := normalizeBackend(cfg.Backend); err != nil {
 		return err
 	}
+	if cfg.AutoScale && cfg.Backend != coreapp.BackendSymbols {
+		return fmt.Errorf("auto-scale currently supports the symbols backend only")
+	}
 	if _, err := coreapp.NormalizeCaptureBackendForConfig(cfg.CaptureBackend); err != nil {
 		return err
 	}
@@ -162,6 +165,9 @@ func normalizeConfig(cfg TransferConfig) TransferConfig {
 	}
 	if backend, err := coreapp.NormalizeCaptureBackendForConfig(cfg.CaptureBackend); err == nil {
 		cfg.CaptureBackend = backend
+	}
+	if cfg.AutoScale {
+		cfg.Position = "c:c"
 	}
 	return cfg
 }

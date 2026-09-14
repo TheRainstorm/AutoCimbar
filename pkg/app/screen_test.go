@@ -1,7 +1,9 @@
 package app
 
 import (
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/autocambar/autocambar/pkg/codec"
 	colorpkg "github.com/autocambar/autocambar/pkg/color"
@@ -241,5 +243,48 @@ func BenchmarkScreenFrameSourceNextBGRARedundant(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+func TestCenteredScreenRegion(t *testing.T) {
+	for _, tc := range []struct{ input, want string }{
+		{"", "0:c:c"}, {"1", "1:c:c"}, {"-0:-0", "0:c:c"},
+		{"2:30:40", "2:c:c"}, {"3:c:c", "3:c:c"},
+	} {
+		got, err := CenteredScreenRegion(tc.input)
+		if err != nil || got != tc.want {
+			t.Fatalf("CenteredScreenRegion(%q) = %q, %v; want %q", tc.input, got, err, tc.want)
+		}
+	}
+	if _, err := CenteredScreenRegion("invalid"); err == nil {
+		t.Fatal("accepted invalid screen")
+	}
+}
+
+// A capture goroutine panic must report a task error, not terminate the GUI.
+type panickingScreenCapture struct{}
+
+func (panickingScreenCapture) CaptureFrame([]byte) (*capturedScreenFrame, error) {
+	panic("capture regression")
+}
+
+func TestScreenCapturePanicReportsError(t *testing.T) {
+	errs := make(chan error, 1)
+	done := make(chan struct{})
+	go runScreenCaptureLoop(panickingScreenCapture{}, time.Millisecond, newScreenDecoderProgress(nil, 1),
+		make(chan *capturedScreenFrame, 1), make(chan []byte, 1), errs, make(chan struct{}),
+		func() bool { return false }, "", "", false, done)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("capture loop did not stop after panic")
+	}
+	select {
+	case err := <-errs:
+		if !strings.Contains(err.Error(), "capture regression") || !strings.Contains(err.Error(), "panickingScreenCapture") {
+			t.Fatalf("missing panic cause or stack: %v", err)
+		}
+	default:
+		t.Fatal("capture panic was not reported")
 	}
 }

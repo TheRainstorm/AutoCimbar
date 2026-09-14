@@ -288,3 +288,112 @@ func TestAutoScaleRequiresPacketCRC(t *testing.T) {
 		t.Fatal("locked symbol frame with bad CRC", err)
 	}
 }
+
+func TestAutoScaleDesktopResize(t *testing.T) {
+	a, src, _ := scaleTestFixture(t, 8, 4, 2, 20, 1, 1)
+	capture := &staticScaleCapture{remoteScaledDesktop(src, 240, 800, 600, true)}
+	a.source = capture
+	if f, err := a.CaptureFrame(nil); err != nil || f == nil {
+		t.Fatal("initial lock failed", err)
+	}
+	// The old region still fits, but is no longer centered on the new desktop.
+	capture.frame = remoteScaledDesktop(src, 320, 1000, 800, true)
+	frame, err := a.CaptureFrame(nil)
+	if err != nil || frame == nil || !a.valid(frame) {
+		t.Fatal("did not immediately reacquire after desktop resize", err)
+	}
+	if a.region != image.Rect(340, 240, 660, 560) {
+		t.Fatalf("wrong resized region: %v", a.region)
+	}
+}
+
+func TestAutoScaleInvalidCapture(t *testing.T) {
+	for _, frame := range []*capturedScreenFrame{
+		{},
+		{Width: 800, Height: 600, Stride: 3200},
+		{Width: 800, Height: 600, Stride: 3200, Pix: make([]byte, 3200)},
+		{Width: 2, Height: 2, Stride: 4, Pix: make([]byte, 16)},
+		{Width: 2, Height: 2, Stride: -8, Pix: make([]byte, 16)},
+	} {
+		a, _, _ := scaleTestFixture(t, 8, 4, 2, 20, 1, 1)
+		a.source = &staticScaleCapture{frame}
+		if _, err := a.CaptureFrame(nil); err == nil {
+			t.Fatalf("accepted invalid frame: %+v", frame)
+		}
+	}
+}
+
+func TestAutoScalePaddedCapture(t *testing.T) {
+	a, src, _ := scaleTestFixture(t, 8, 4, 2, 20, 1, 1)
+	frame := remoteScaledDesktop(src, 240, 801, 601, true)
+	stride := frame.Stride + 32
+	pix := make([]byte, stride*(frame.Height-1)+frame.Width*4)
+	for y := 0; y < frame.Height; y++ {
+		copy(pix[y*stride:], frame.Pix[y*frame.Stride:][:frame.Width*4])
+	}
+	frame.Pix, frame.Stride = pix, stride
+	a.source = &staticScaleCapture{frame}
+	if f, err := a.CaptureFrame(nil); err != nil || f == nil || !a.valid(f) {
+		t.Fatal("padded capture failed", err)
+	}
+}
+
+func TestAutoScaleDynamicRQAt180Percent(t *testing.T) {
+	for _, grid := range []int{80, 100} {
+		t.Run(fmt.Sprintf("RQ%d", grid), func(t *testing.T) {
+			a, src, _ := scaleTestFixture(t, 8, 4, 2, grid, 1, 1)
+			side := grid * 8 * 18 / 10
+			good := remoteScaledDesktop(src, side, 3840, 2160, true)
+			capture := &staticScaleCapture{good}
+			a.source = capture
+			if frame, err := a.CaptureFrame(nil); err != nil || frame == nil {
+				t.Fatal("initial scale lock", err)
+			}
+			region := a.region
+			// Simulate a remote desktop update containing rows from different frames:
+			// valid symbol geometry, but the assembled packet cannot pass ECC/CRC.
+			mixed := image.NewRGBA(src.Bounds())
+			copy(mixed.Pix, src.Pix)
+			copy(mixed.Pix[:len(mixed.Pix)/2], src.Pix[len(src.Pix)/2:])
+			capture.frame = remoteScaledDesktop(mixed, side, 3840, 2160, true)
+			if a.valid(a.sampler.normalize(capture.frame, nil)) {
+				t.Fatal("fixture must contain a damaged packet")
+			}
+			var log bytes.Buffer
+			a.log = &log
+			for i := 0; i < 5; i++ {
+				a.nextCheck = time.Time{}
+				frame, err := a.CaptureFrame(nil)
+				if err != nil || frame == nil || a.region != region {
+					t.Fatal("transport damage discarded valid scale", err)
+				}
+			}
+			if !bytes.Contains(log.Bytes(), []byte("geometry stable")) {
+				t.Fatal("missing transport diagnostic")
+			}
+			capture.frame = good
+			a.nextCheck = time.Time{}
+			if frame, err := a.CaptureFrame(nil); err != nil || frame == nil || !a.valid(frame) {
+				t.Fatal("did not recover next intact frame", err)
+			}
+
+			// Starting on a damaged frame must not lock, but fresh-frame probes should
+			// lock as soon as a good capture arrives, before another full size search.
+			a.region = image.Rectangle{}
+			a.nextSearch = time.Time{}
+			capture.frame = remoteScaledDesktop(mixed, side, 3840, 2160, true)
+			if frame, err := a.CaptureFrame(nil); err != nil || frame != nil {
+				t.Fatal("locked damaged packet", err)
+			}
+			if a.pendingSampler == nil {
+				t.Fatal("did not retain promising geometry")
+			}
+			capture.frame = good
+			a.nextProbe = time.Time{}
+			a.nextSearch = time.Now().Add(time.Hour)
+			if frame, err := a.CaptureFrame(nil); err != nil || frame == nil || !a.valid(frame) {
+				t.Fatal("fresh capture probe did not lock", err)
+			}
+		})
+	}
+}
